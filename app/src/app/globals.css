@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+:root {
+  --bg-canvas: #f7f5f0;
+  --bg-surface: #fcfbf8;
+  --bg-subtle: #efece4;
+  --border: #e2ddd2;
+  --border-strong: #cfc8b8;
+  --ink: #161513;
+  --ink-muted: #5c584f;
+  --accent: #c54b24;
+  --accent-hover: #a93e1b;
+  --accent-soft: #f9eae4;
+  --ok: #1d6b48;
+  --ok-soft: #e9f4ee;
+  --warn: #945f00;
+  --warn-soft: #fbf2de;
+}
+
+@theme inline {
+  --font-sans: var(--font-outfit), "Outfit", system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  background-color: var(--bg-canvas);
+  color: var(--ink);
+  font-family: var(--font-outfit), "Outfit", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom restrained range slider */
+input[type="range"] {
+  accent-color: var(--accent);
+}
+
+/* Subtle architectural focus ring */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
