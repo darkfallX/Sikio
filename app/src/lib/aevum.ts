@@ -42,9 +42,9 @@ export const AEVUM_CONFIG = {
   // Verified live on Aevum Testnet (Chain 44005)
   entryPointV07Address:
     "0x0000000071727De22E5E9d8BAf0edAc6f37da032" as `0x${string}`,
-  // Optional deployed ReviewEscrow contract address on Aevum Testnet
+  // Deployed ReviewEscrow contract address on QDay Aevum Testnet (Chain 44005)
   reviewEscrowAddress: (process.env.NEXT_PUBLIC_REVIEW_ESCROW_ADDRESS ||
-    "") as `0x${string}` | "",
+    "0x36Cf1caB839bf01306E647C56B2e44e7d4a35E6b") as `0x${string}`,
 } as const;
 
 export const ERC20_ABI = parseAbi([
