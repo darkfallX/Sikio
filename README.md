@@ -101,7 +101,7 @@ docker run -p 3000:3000 sikio
 
 ---
 
-## Verified QDay Aevum Testnet Parameters
+## Verified QDay Aevum Testnet Parameters & Live Deployment
 
 | Parameter | Verified Value |
 |---|---|
@@ -112,6 +112,22 @@ docker run -p 3000:3000 sikio
 | Native Gas Token | `tQDAY` (18 decimals) |
 | Test Stablecoin (`tUSD8`) | `0x456569838f1d43009A91ebA4263147Afd7233483` (6 decimals) |
 | ERC-4337 EntryPoint v0.7 | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` (verified deployed on chain 44005) |
+| **Sikio `ReviewEscrow` (Live)** | [`0x36Cf1caB839bf01306E647C56B2e44e7d4a35E6b`](https://explorer-test.qday.info/address/0x36Cf1caB839bf01306E647C56B2e44e7d4a35E6b) |
+
+### Verified End-to-End Testnet Transactions (Chain 44005)
+
+Reproducible via `cd contracts && REVIEW_ESCROW_ADDRESS=0x36Cf1caB839bf01306E647C56B2e44e7d4a35E6b npm run demo:aevum`:
+
+| Step | Action | Aevum Explorer Transaction |
+|---|---|---|
+| 1 | Approve `2.00 tUSD8` to `ReviewEscrow` | [`0x6114f8d4…25b2b43`](https://explorer-test.qday.info/tx/0x6114f8d4dada8725fc04c173f5081f0828ad7695dba1891b3d0d9cb3825b2b43) |
+| 2 | `createBatch` (Batch #1, `2.00 tUSD8` cap, `0.50` max/task) | [`0x5e7cc05f…996c026`](https://explorer-test.qday.info/tx/0x5e7cc05fa7d66b1ba76f6f0f64c634338ba6d285767a357ac1ca7289ff96c026) |
+| 3 | `setTrustedEditor` (allowlist 0-`tQDAY` editor `0x2281…2D69`) | [`0xdc0b4bc3…6df757d`](https://explorer-test.qday.info/tx/0xdc0b4bc3abde7d4639b4e8b823e63f79c2ad92c77865457824319a63e6df757d) |
+| 4 | `payInference` (`0.04 tUSD8` x402 AI transcription buy) | [`0xb47b9b57…ee05bb0`](https://explorer-test.qday.info/tx/0xb47b9b577b76f7c697ec5927fc3684ba79758da90da7216597d9f5b79ee05bb0) |
+| 5 | `offerTask` (reserve `0.25 tUSD8` for flagged excerpt) | [`0xc5429911…36e81a3`](https://explorer-test.qday.info/tx/0xc5429911b9d24fe6e13780b7b9f3215b60d3ceeb9ba642fb816158c0336e81a3) |
+| 6 | `submitCorrectionBySig` (zero-gas EIP-712 relayed fix) | [`0x02850a07…2ee7f64`](https://explorer-test.qday.info/tx/0x02850a079ffe5b5016668c2c736a0099403d277df65e408c329d29cea2ee7f64) |
+| 7 | `acceptTask` (pay editor `0.25 tUSD8` once; verified balance `0.25`) | [`0x71820bca…f38b6eb`](https://explorer-test.qday.info/tx/0x71820bca063398666435fae1c7633f8ed779cff4df487b01c3a988cedf38b6eb) |
+| 8 | `withdrawAvailable` (reclaim unused `1.71 tUSD8` to agency) | [`0x82222855…360d537`](https://explorer-test.qday.info/tx/0x82222855be1128914065c31d5c6f572afcf2886a74b36c8b3da883a1b360d537) |
 
 ---
 
@@ -133,7 +149,7 @@ docker run -p 3000:3000 sikio
 ## Limitations Stated Plainly
 
 - **Testnet only (`tUSD8`):** Mainnet agency deployment requires a regulated stablecoin with local off-ramps (e.g., NGN/KES/GHS cash-out).
-- **Live on-chain deployment requires funded deployer key:** No private key is bundled in this repository. Without `NEXT_PUBLIC_REVIEW_ESCROW_ADDRESS` + a connected Aevum `44005` wallet, the UI runs in clearly badged **Sandbox Mode** executing identical `ReviewEscrow` rules so judges can evaluate every workflow frictionlessly.
+- **Interactive Sandbox + Live Testnet:** `ReviewEscrow.sol` is deployed and verified end-to-end on QDay Aevum Testnet (`0x36Cf1caB839bf01306E647C56B2e44e7d4a35E6b`). For visitors who open the web app without a funded Aevum wallet, interactive flows run in clearly badged **Sandbox Mode** executing identical escrow policy rules.
 - **QDay SDK / Bundler status:** `@qday-io/sdk` and public Aevum Alto bundler URLs are scheduled for Q1 2027 (`qday-io/qday-wiki`). `ReviewEscrow.sol` enforces batch caps, expiry, allowlists, and EIP-712 gasless submissions directly on Aevum Testnet today.
 - **Overconfident AI errors:** Targeted review misses errors where ASR scores above the agency's confidence floor; this rate is measured and published in `/receipts` and [`docs/BENCHMARK.md`](docs/BENCHMARK.md).
 - **Self-hosted transcription endpoint:** `/api/transcribe` is operated by Sikio and explicitly labelled as ours.
