@@ -6,11 +6,12 @@ import {
   Download,
   Upload,
   ArrowRight,
-  PlayCircle,
+  Play,
   RefreshCw,
   CheckCircle2,
   Clock,
   AlertCircle,
+  Radio,
 } from "lucide-react";
 import {
   BatchBudget,
@@ -44,6 +45,30 @@ interface StatePayload {
   showcaseClips: ShowcaseClipOption[];
 }
 
+const CLIP_SAMPLE_ERRORS: Record<string, [string, string][]> = {
+  "lagos-fintech-ep14": [
+    ["Pay stark", "Paystack"],
+    ["wall holler", "wahala"],
+    ["down for", "danfo"],
+  ],
+  "nairobi-matatu-doc": [
+    ["my tattoo", "matatu"],
+    ["one anchi", "mwananchi"],
+    ["Killy Manny", "Kilimani"],
+  ],
+  "accra-nollywood-scene": [
+    ["jaw love", "jollof"],
+    ["Quarry", "Kwame"],
+    ["McCullough", "Makola"],
+  ],
+};
+
+function notifyNavSync() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("sikio:state-updated"));
+  }
+}
+
 export default function StudioPage() {
   const { address, isAevum } = useWallet();
   const [data, setData] = useState<StatePayload | null>(null);
@@ -60,7 +85,6 @@ export default function StudioPage() {
   const [seekToTime, setSeekToTime] = useState<number | null>(null);
   const [playheadTime, setPlayheadTime] = useState(0);
 
-  // Custom upload state
   const [customFileUrl, setCustomFileUrl] = useState<string | null>(null);
   const [customFileName, setCustomFileName] = useState<string | null>(null);
   const [customDuration, setCustomDuration] = useState<number>(16);
@@ -83,6 +107,7 @@ export default function StudioPage() {
       } else {
         setActiveJobId(null);
       }
+      notifyNavSync();
     } catch {
       setError("Could not reach Sikio backend state.");
     } finally {
@@ -133,7 +158,6 @@ export default function StudioPage() {
     setCustomFileName(file.name);
     setSelectedClipId("custom-upload");
 
-    // Measure actual duration via temporary HTMLMediaElement
     const probe = document.createElement("audio");
     probe.src = objectUrl;
     probe.onloadedmetadata = () => {
@@ -143,18 +167,18 @@ export default function StudioPage() {
     };
   };
 
-  const runSikioAgent = async () => {
+  const runSikioAgent = async (overrideClipId?: string) => {
+    const clipToRun = overrideClipId || selectedClipId;
     setError(null);
     setNotice(null);
     setRunning(true);
     try {
-      const isCustom = selectedClipId === "custom-upload";
-      // First demonstrate real HTTP 402 Payment Required handshake against /api/transcribe
+      const isCustom = clipToRun === "custom-upload";
       const probe402 = await fetch("/api/transcribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          clipId: isCustom ? undefined : selectedClipId,
+          clipId: isCustom ? undefined : clipToRun,
           confidenceThreshold: threshold,
         }),
       });
@@ -170,7 +194,7 @@ export default function StudioPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          clipId: isCustom ? undefined : selectedClipId,
+          clipId: isCustom ? undefined : clipToRun,
           customTitle: isCustom ? customFileName || "Uploaded Agency Clip" : undefined,
           customAudioUrl: isCustom ? customFileUrl : undefined,
           customDurationSeconds: isCustom ? customDuration : undefined,
@@ -192,7 +216,7 @@ export default function StudioPage() {
         setActiveJobId(json.job.id);
       }
       setNotice(
-        `x402 paid 0.04 tUSD8 · Flagged ${json.createdTasks.length} uncertain passage${
+        `x402 settled 0.04 tUSD8 · Flagged ${json.createdTasks.length} uncertain span${
           json.createdTasks.length === 1 ? "" : "s"
         } and locked ${(json.createdTasks.length * feePerTask).toFixed(2)} tUSD8 in ReviewEscrow.`
       );
@@ -252,8 +276,8 @@ export default function StudioPage() {
   if (loading || !data) {
     return (
       <div className="space-y-4">
-        <div className="h-10 w-64 rounded-[6px] bg-[#EFECE4] animate-pulse" />
-        <div className="h-64 w-full rounded-[8px] bg-[#EFECE4] animate-pulse" />
+        <div className="h-12 w-72 rounded-[5px] bg-[#EBE6DB] animate-pulse" />
+        <div className="h-72 w-full rounded-[6px] bg-[#EBE6DB] animate-pulse" />
       </div>
     );
   }
@@ -263,31 +287,32 @@ export default function StudioPage() {
 
   return (
     <div className="space-y-6">
-      {/* Compact Studio Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-[28px] font-semibold tracking-[-0.025em] text-[#161513]">
-            Studio
+      {/* Editorial Studio Masthead */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-4 border-b border-[#DDD7CA]">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.08em] text-[#C94A22]">
+            <Radio className="w-3.5 h-3.5" />
+            <span>Broadcast Caption Desk</span>
+          </div>
+          <h1 className="text-2xl sm:text-[32px] font-semibold tracking-[-0.03em] text-[#141311] leading-tight">
+            Pay for the human ear only where AI hesitates.
           </h1>
-          <p className="text-sm text-[#5C584F] mt-0.5">
-            AI captions for African voices. Hire a native ear only for uncertain seconds, settled once in tUSD8 on Aevum.
-          </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           {activeJob && (
             <>
               <a
                 href={`/api/jobs/${activeJob.id}/export?format=srt`}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] text-xs font-medium bg-[#FCFBF8] border border-[#E2DDD2] text-[#161513] hover:border-[#CFC8B8] transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[5px] text-xs font-medium bg-[#FBF9F4] border border-[#DDD7CA] text-[#141311] hover:border-[#141311] transition-colors"
               >
-                <Download className="w-3.5 h-3.5" /> Export .srt
+                <Download className="w-3.5 h-3.5" /> .SRT
               </a>
               <a
                 href={`/api/jobs/${activeJob.id}/export?format=vtt`}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] text-xs font-medium bg-[#FCFBF8] border border-[#E2DDD2] text-[#161513] hover:border-[#CFC8B8] transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[5px] text-xs font-medium bg-[#FBF9F4] border border-[#DDD7CA] text-[#141311] hover:border-[#141311] transition-colors"
               >
-                <Download className="w-3.5 h-3.5" /> Export .vtt
+                <Download className="w-3.5 h-3.5" /> .VTT
               </a>
             </>
           )}
@@ -295,21 +320,21 @@ export default function StudioPage() {
             type="button"
             disabled={policyBusy}
             onClick={handleResetDemo}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] text-xs font-medium text-[#5C584F] bg-[#EFECE4] hover:text-[#161513] transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[5px] text-xs font-medium text-[#5C574E] bg-[#EBE6DB] hover:text-[#141311] transition-colors cursor-pointer"
           >
             <RefreshCw className="w-3.5 h-3.5" /> Reset Batch
           </button>
         </div>
       </div>
 
-      {/* Pipeline Intake Bar: Pick African-voice clip or upload custom file */}
-      <section className="rounded-[8px] border border-[#E2DDD2] bg-[#FCFBF8] p-4 sm:p-5">
+      {/* Hardware-Styled Control Deck */}
+      <section className="rounded-[6px] border border-[#DDD7CA] bg-[#FBF9F4] p-4 sm:p-5">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
-          <div className="lg:col-span-5 space-y-1.5">
-            <label className="block text-xs font-medium text-[#5C584F]">
-              Source clip (real audio) or upload your own
-            </label>
-            <div className="flex flex-wrap gap-2">
+          <div className="lg:col-span-5 space-y-2">
+            <span className="block text-[11px] font-mono uppercase tracking-[0.06em] text-[#5C574E]">
+              Input Tape / Custom Upload
+            </span>
+            <div className="flex flex-wrap gap-1.5">
               {data.showcaseClips.map((c) => {
                 const active = selectedClipId === c.id;
                 return (
@@ -317,25 +342,28 @@ export default function StudioPage() {
                     key={c.id}
                     type="button"
                     onClick={() => setSelectedClipId(c.id)}
-                    className={`px-3 py-1.5 rounded-[6px] text-xs font-medium border transition-colors cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-[5px] text-xs font-medium border transition-colors cursor-pointer ${
                       active
-                        ? "bg-[#161513] text-[#FCFBF8] border-[#161513]"
-                        : "bg-[#F7F5F0] text-[#161513] border-[#E2DDD2] hover:border-[#CFC8B8]"
+                        ? "bg-[#141311] text-[#FBF9F4] border-[#141311]"
+                        : "bg-[#F4F1EA] text-[#141311] border-[#DDD7CA] hover:border-[#141311]"
                     }`}
                   >
-                    {c.city} · {c.languageTag}
+                    {c.city}{" "}
+                    <span className="font-mono text-[10px] opacity-75">
+                      {c.languageTag}
+                    </span>
                   </button>
                 );
               })}
               <label
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] text-xs font-medium border cursor-pointer transition-colors ${
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[5px] text-xs font-medium border cursor-pointer transition-colors ${
                   selectedClipId === "custom-upload"
-                    ? "bg-[#161513] text-[#FCFBF8] border-[#161513]"
-                    : "bg-[#FCFBF8] text-[#5C584F] border-[#E2DDD2] hover:border-[#CFC8B8] hover:text-[#161513]"
+                    ? "bg-[#141311] text-[#FBF9F4] border-[#141311]"
+                    : "bg-[#FBF9F4] text-[#5C574E] border-[#DDD7CA] hover:border-[#141311] hover:text-[#141311]"
                 }`}
               >
                 <Upload className="w-3.5 h-3.5" />
-                {customFileName ? customFileName.slice(0, 18) : "Upload audio"}
+                {customFileName ? customFileName.slice(0, 16) : "Upload"}
                 <input
                   type="file"
                   accept="audio/*,video/*"
@@ -346,12 +374,12 @@ export default function StudioPage() {
             </div>
           </div>
 
-          <div className="lg:col-span-3 space-y-1.5">
-            <div className="flex items-center justify-between text-xs">
-              <label htmlFor="conf-slider" className="font-medium text-[#5C584F]">
-                Confidence floor
+          <div className="lg:col-span-3 space-y-2">
+            <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-[0.05em]">
+              <label htmlFor="conf-slider" className="text-[#5C574E]">
+                Confidence Floor
               </label>
-              <span className="font-mono font-medium text-[#161513] tabular-nums">
+              <span className="font-semibold text-[#141311] tabular-nums">
                 {Math.round(threshold * 100)}%
               </span>
             </div>
@@ -368,11 +396,11 @@ export default function StudioPage() {
           </div>
 
           <div className="lg:col-span-2 space-y-1.5">
-            <div className="flex items-center justify-between text-xs">
-              <label htmlFor="fee-input" className="font-medium text-[#5C584F]">
-                Fee / task
+            <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-[0.05em]">
+              <label htmlFor="fee-input" className="text-[#5C574E]">
+                Task Fee
               </label>
-              <span className="font-mono text-[#5C584F]">tUSD8</span>
+              <span className="text-[#847D72]">tUSD8</span>
             </div>
             <input
               id="fee-input"
@@ -382,7 +410,7 @@ export default function StudioPage() {
               step={0.05}
               value={feePerTask}
               onChange={(e) => setFeePerTask(Number(e.target.value))}
-              className="w-full px-2.5 py-1.5 rounded-[6px] text-sm font-mono bg-[#F7F5F0] border border-[#E2DDD2] text-[#161513]"
+              className="w-full px-2.5 py-1.5 rounded-[5px] text-sm font-mono bg-[#F4F1EA] border border-[#DDD7CA] text-[#141311]"
             />
           </div>
 
@@ -390,39 +418,39 @@ export default function StudioPage() {
             <button
               type="button"
               disabled={running}
-              onClick={runSikioAgent}
-              className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-[6px] text-sm font-medium bg-[#C54B24] text-[#FCFBF8] hover:bg-[#A93E1B] transition-colors disabled:opacity-50 cursor-pointer"
+              onClick={() => runSikioAgent()}
+              className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-[5px] text-sm font-medium bg-[#C94A22] text-[#FBF9F4] hover:bg-[#AB3B18] transition-colors disabled:opacity-50 cursor-pointer"
             >
-              <PlayCircle className="w-4 h-4" />
+              <Play className="w-3.5 h-3.5 fill-current" />
               {running ? "Running…" : "Run Agent"}
             </button>
           </div>
         </div>
 
         {selectedClipId === "custom-upload" && (
-          <div className="mt-3 pt-3 border-t border-[#E2DDD2]">
-            <label className="block text-xs font-medium text-[#5C584F] mb-1">
-              Optional spoken script / reference notes for local ASR analysis ({customDuration}s detected)
+          <div className="mt-3 pt-3 border-t border-[#DDD7CA]">
+            <label className="block text-xs font-medium text-[#5C574E] mb-1">
+              Optional spoken script for local ASR ({customDuration}s detected)
             </label>
             <input
               type="text"
               value={customTranscript}
               onChange={(e) => setCustomTranscript(e.target.value)}
               placeholder="Paste rough transcript or leave blank for Sikio Local ASR Analyzer..."
-              className="w-full px-3 py-1.5 rounded-[6px] text-sm bg-[#F7F5F0] border border-[#E2DDD2] text-[#161513]"
+              className="w-full px-3 py-1.5 rounded-[5px] text-sm bg-[#F4F1EA] border border-[#DDD7CA] text-[#141311]"
             />
           </div>
         )}
 
         {error && (
-          <div className="mt-3 flex items-center gap-2 rounded-[6px] bg-[#F9EAE4] border border-[#EBC7BA] px-3 py-2 text-xs text-[#B8381A]">
+          <div className="mt-3 flex items-center gap-2 rounded-[5px] bg-[#FAEAE4] border border-[#E8C5B8] px-3 py-2 text-xs text-[#B33C17]">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
         {notice && (
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-[6px] bg-[#E9F4EE] border border-[#C6E3D3] px-3 py-2 text-xs text-[#1D6B48]">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-[5px] bg-[#E7F4ED] border border-[#C3E2D1] px-3 py-2 text-xs text-[#1B6B46]">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 shrink-0" />
               <span>{notice}</span>
@@ -431,27 +459,26 @@ export default function StudioPage() {
               href="/ear"
               className="inline-flex items-center gap-1 font-semibold underline underline-offset-2"
             >
-              Open Editor Ear <ArrowRight className="w-3.5 h-3.5" />
+              Next: Open Editor Ear <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
         )}
       </section>
 
-      {/* Main Workspace Grid: Caption Hero (Left) + Budget & Cost Rail (Right) */}
+      {/* Main Split Workspace */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         <div className="lg:col-span-8 space-y-5">
-          {/* Job switcher if multiple clips processed */}
           {data.jobs.length > 1 && (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
               {data.jobs.map((j) => (
                 <button
                   key={j.id}
                   type="button"
                   onClick={() => setActiveJobId(j.id)}
-                  className={`px-3 py-1.5 rounded-[6px] text-xs font-medium border transition-colors cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-[5px] text-xs font-medium border transition-colors cursor-pointer ${
                     activeJob?.id === j.id
-                      ? "bg-[#161513] text-[#FCFBF8] border-[#161513]"
-                      : "bg-[#FCFBF8] text-[#5C584F] border-[#E2DDD2] hover:text-[#161513]"
+                      ? "bg-[#141311] text-[#FBF9F4] border-[#141311]"
+                      : "bg-[#FBF9F4] text-[#5C574E] border-[#DDD7CA] hover:text-[#141311]"
                   }`}
                 >
                   {j.title}
@@ -476,69 +503,75 @@ export default function StudioPage() {
                 onWordClick={handleWordClick}
               />
 
-              {/* Flagged Micro-Review Tasks Table */}
-              <div className="rounded-[8px] border border-[#E2DDD2] bg-[#FCFBF8] overflow-hidden">
-                <div className="px-5 py-3.5 border-b border-[#E2DDD2] flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="text-sm font-semibold text-[#161513]">
-                    Escrowed Micro-Review Tasks ({activeJobTasks.length})
-                  </h2>
+              {/* Flagged Micro-Review Desk */}
+              <div className="rounded-[6px] border border-[#DDD7CA] bg-[#FBF9F4] overflow-hidden">
+                <div className="px-5 py-3 border-b border-[#DDD7CA] flex flex-wrap items-center justify-between gap-2 bg-[#F4F1EA]/70">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-mono uppercase tracking-[0.06em] text-[#847D72]">
+                      Escrow Queue
+                    </span>
+                    <h2 className="text-sm font-semibold text-[#141311]">
+                      {activeJobTasks.length} Flagged Spans
+                    </h2>
+                  </div>
                   <div className="flex items-center gap-3 text-xs">
                     <Link
                       href="/ear"
-                      className="text-[#C54B24] font-medium hover:underline inline-flex items-center gap-1"
+                      className="text-[#C94A22] font-medium hover:underline inline-flex items-center gap-1"
                     >
-                      Editor Ear ({pendingSubmitCount} open)
+                      Ear ({pendingSubmitCount} open)
                       <ArrowRight className="w-3 h-3" />
                     </Link>
                     <Link
                       href="/approve"
-                      className="text-[#161513] font-medium hover:underline inline-flex items-center gap-1"
+                      className="text-[#141311] font-medium hover:underline inline-flex items-center gap-1"
                     >
-                      Approve Queue ({pendingApproveCount} waiting)
+                      Approve ({pendingApproveCount} waiting)
                       <ArrowRight className="w-3 h-3" />
                     </Link>
                   </div>
                 </div>
 
                 {activeJobTasks.length === 0 ? (
-                  <div className="p-6 text-sm text-[#5C584F]">
-                    No words scored below {Math.round(activeJob.confidenceThreshold * 100)}%. Lower the confidence floor or try another clip.
+                  <div className="p-6 text-sm text-[#5C574E]">
+                    No words scored below{" "}
+                    {Math.round(activeJob.confidenceThreshold * 100)}%. Raise the confidence floor to inspect more words.
                   </div>
                 ) : (
-                  <div className="divide-y divide-[#E2DDD2]">
+                  <div className="divide-y divide-[#DDD7CA]">
                     {activeJobTasks.map((t) => (
                       <div
                         key={t.id}
-                        className="px-5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm hover:bg-[#F7F5F0]/70 transition-colors"
+                        className="px-5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm hover:bg-[#F4F1EA]/70 transition-colors"
                       >
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <button
                               type="button"
                               onClick={() => setSeekToTime(t.start)}
-                              className="font-mono text-xs px-1.5 py-0.5 rounded-[4px] bg-[#EFECE4] text-[#161513] hover:bg-[#E2DDD2] cursor-pointer"
+                              className="font-mono text-[11px] px-1.5 py-0.5 rounded-[4px] bg-[#EBE6DB] text-[#141311] hover:bg-[#DDD7CA] cursor-pointer tabular-nums"
                             >
                               {t.start.toFixed(1)}s–{t.end.toFixed(1)}s
                             </button>
-                            <span className="font-medium text-[#161513]">
+                            <span className="font-medium text-[#141311]">
                               “{t.aiGuess}”
                             </span>
                             {t.submittedText && t.submittedText !== t.aiGuess && (
-                              <span className="text-[#1D6B48] font-medium">
+                              <span className="text-[#1B6B46] font-semibold">
                                 → “{t.submittedText}”
                               </span>
                             )}
-                            <span className="text-xs font-mono text-[#5C584F]">
+                            <span className="text-[11px] font-mono text-[#847D72]">
                               {Math.round(t.minConfidence * 100)}% AI
                             </span>
                           </div>
-                          <div className="text-xs text-[#5C584F] mt-0.5">
-                            Assigned to {t.editorName} ({t.editorCity}) · Excerpt-only audio
+                          <div className="text-xs text-[#5C574E] mt-0.5">
+                            {t.editorName} ({t.editorCity}) · Excerpt-only WAV
                           </div>
                         </div>
 
                         <div className="flex items-center gap-2.5 shrink-0">
-                          <span className="font-mono text-xs font-medium text-[#161513] tabular-nums">
+                          <span className="font-mono text-xs font-medium text-[#141311] tabular-nums">
                             {t.feeTusd8.toFixed(2)} tUSD8
                           </span>
                           <TaskStatusPill status={t.status} />
@@ -550,45 +583,91 @@ export default function StudioPage() {
               </div>
             </>
           ) : (
-            /* Clean Empty State inviting the first Agent Run */
-            <div className="rounded-[8px] border border-[#E2DDD2] bg-[#FCFBF8] p-8 sm:p-10 space-y-5">
-              <div className="max-w-lg space-y-2">
-                <span className="inline-block text-[11px] font-mono uppercase tracking-wider text-[#C54B24] font-medium">
-                  Ready on Batch #{data.batch.batchId}
-                </span>
-                <h2 className="text-xl font-semibold text-[#161513] tracking-[-0.02em]">
-                  Select a clip above and run the Sikio Agent
-                </h2>
-                <p className="text-sm text-[#5C584F] leading-relaxed">
-                  The agent buys word-level AI transcription over HTTP 402 (x402), flags misheard local names and code-switching, and reserves tUSD8 micro-fees in ReviewEscrow inside your approved cap.
-                </p>
+            /* Sculptural First-Visit Broadcast Intake Deck */
+            <div className="rounded-[6px] border border-[#DDD7CA] bg-[#FBF9F4] overflow-hidden">
+              <div className="bg-[#121110] text-[#FBF9F4] p-6 sm:p-7 space-y-5">
+                <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-[0.08em] text-[#9C9589]">
+                  <span>African Speech ASR · Where Models Break</span>
+                  <span className="text-[#C94A22]">x402 + ReviewEscrow</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {(CLIP_SAMPLE_ERRORS[selectedClipId] ||
+                    CLIP_SAMPLE_ERRORS["lagos-fintech-ep14"]
+                  ).map(([wrong, right]) => (
+                    <div
+                      key={wrong}
+                      className="rounded-[5px] border border-[#292623] bg-[#1C1A18] p-3.5 space-y-1.5"
+                    >
+                      <div className="text-[11px] font-mono text-[#8A8378]">
+                        AI hears
+                      </div>
+                      <div className="text-sm font-medium text-[#FFD3C4] line-through">
+                        “{wrong}”
+                      </div>
+                      <div className="text-sm font-semibold text-[#AEE8C9]">
+                        → “{right}”
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#262320]">
+                  <p className="text-xs text-[#ABA498] max-w-md">
+                    Pick a real spoken clip below. Sikio pays 0.04 tUSD8 via HTTP 402, isolates the misheard seconds, and locks micro-fees for a native speaker.
+                  </p>
+                  <button
+                    type="button"
+                    disabled={running}
+                    onClick={() => runSikioAgent()}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-[5px] text-xs font-semibold bg-[#C94A22] text-[#FBF9F4] hover:bg-[#AB3B18] transition-colors cursor-pointer"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                    {running ? "Running…" : "Start Live Run · 0.04 tUSD8"}
+                  </button>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-                {data.showcaseClips.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => setSelectedClipId(c.id)}
-                    className={`text-left p-3.5 rounded-[6px] border transition-colors cursor-pointer ${
-                      selectedClipId === c.id
-                        ? "border-[#C54B24] bg-[#F9EAE4]/45"
-                        : "border-[#E2DDD2] bg-[#F7F5F0] hover:border-[#CFC8B8]"
-                    }`}
-                  >
-                    <div className="text-xs font-mono text-[#5C584F]">{c.languageTag}</div>
-                    <div className="text-sm font-semibold text-[#161513] mt-0.5">
-                      {c.title}
-                    </div>
-                    <div className="text-xs text-[#5C584F] mt-1">{c.sourceLabel}</div>
-                  </button>
-                ))}
+              {/* 3 Tactile Tape Reels */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[#DDD7CA]">
+                {data.showcaseClips.map((c, idx) => {
+                  const active = selectedClipId === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setSelectedClipId(c.id)}
+                      className={`text-left p-4 transition-colors cursor-pointer ${
+                        active
+                          ? "bg-[#FAEAE4]/55"
+                          : "bg-[#FBF9F4] hover:bg-[#F4F1EA]"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-[11px] font-mono">
+                        <span className="text-[#847D72]">TAPE 0{idx + 1}</span>
+                        <span
+                          className={
+                            active ? "text-[#C94A22] font-semibold" : "text-[#5C574E]"
+                          }
+                        >
+                          {c.languageTag}
+                        </span>
+                      </div>
+                      <div className="text-sm font-semibold text-[#141311] mt-1.5">
+                        {c.title}
+                      </div>
+                      <div className="text-xs text-[#5C574E] mt-0.5">
+                        {c.sourceLabel}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
         </div>
 
-        {/* Right Rail: Budget Policy + Publishable Minute Economics + x402 Proof */}
+        {/* Right Architectural Rail */}
         <div className="lg:col-span-4 space-y-5">
           <BudgetRail
             batch={data.batch}
@@ -598,67 +677,104 @@ export default function StudioPage() {
           />
 
           {activeJob && costMetrics && (
-            <div className="rounded-[8px] border border-[#E2DDD2] bg-[#FCFBF8] p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-[#161513]">
-                  Cost per Publishable Minute
+            <div className="rounded-[6px] border border-[#DDD7CA] bg-[#FBF9F4] overflow-hidden">
+              <div className="px-4 py-3 border-b border-[#DDD7CA] flex items-center justify-between bg-[#F4F1EA]/70">
+                <h2 className="text-xs font-semibold uppercase tracking-[0.05em] text-[#141311]">
+                  Publishable Minute Cost
                 </h2>
-                <span className="text-[11px] font-mono px-2 py-0.5 rounded-[4px] bg-[#E9F4EE] text-[#1D6B48]">
-                  {costMetrics.reviewTimeSavedPct}% less audio reviewed
+                <span className="text-[11px] font-mono px-2 py-0.5 rounded-[4px] bg-[#E7F4ED] text-[#1B6B46] font-medium">
+                  -{costMetrics.reviewTimeSavedPct}% review time
                 </span>
               </div>
 
-              <div className="flex items-baseline gap-2 tabular-nums">
-                <span className="text-3xl font-semibold tracking-[-0.03em] text-[#161513]">
-                  ${costMetrics.costPerMinuteProjected.toFixed(2)}
-                </span>
-                <span className="text-xs text-[#5C584F]">
-                  / min projected (vs. ${costMetrics.fullHumanReviewCostPerMin.toFixed(2)} full review)
-                </span>
-              </div>
+              <div className="p-4 space-y-3.5">
+                <div className="flex items-baseline gap-2 tabular-nums">
+                  <span className="text-3xl font-semibold tracking-[-0.03em] text-[#141311]">
+                    ${costMetrics.costPerMinuteProjected.toFixed(2)}
+                  </span>
+                  <span className="text-xs text-[#5C574E]">
+                    / min vs. ${costMetrics.fullHumanReviewCostPerMin.toFixed(2)} full review
+                  </span>
+                </div>
 
-              <div className="space-y-1.5 pt-2 border-t border-[#E2DDD2] text-xs tabular-nums">
-                <div className="flex justify-between">
-                  <span className="text-[#5C584F]">AI transcription (x402)</span>
-                  <span className="font-mono text-[#161513]">
-                    {activeJob.inferenceCostTusd8.toFixed(2)} tUSD8
-                  </span>
+                {/* Visual bar comparison */}
+                <div className="space-y-1.5 text-[11px] font-mono">
+                  <div className="flex items-center gap-2">
+                    <span className="w-12 text-[#5C574E]">Full</span>
+                    <div className="flex-1 h-2 bg-[#EBE6DB] rounded-[2px] overflow-hidden">
+                      <div className="h-full w-full bg-[#B4ACA0]" />
+                    </div>
+                    <span className="w-11 text-right text-[#5C574E]">$3.50</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-12 text-[#141311] font-semibold">Sikio</span>
+                    <div className="flex-1 h-2 bg-[#EBE6DB] rounded-[2px] overflow-hidden">
+                      <div
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            Math.max(
+                              8,
+                              (costMetrics.costPerMinuteProjected /
+                                costMetrics.fullHumanReviewCostPerMin) *
+                                100
+                            )
+                          )}%`,
+                        }}
+                        className="h-full bg-[#1B6B46]"
+                      />
+                    </div>
+                    <span className="w-11 text-right text-[#1B6B46] font-semibold">
+                      ${costMetrics.costPerMinuteProjected.toFixed(2)}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-[#5C584F]">Settled human fixes</span>
-                  <span className="font-mono text-[#1D6B48]">
-                    {(costMetrics.totalSettled - activeJob.inferenceCostTusd8).toFixed(2)} tUSD8
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#5C584F]">Reserved in escrow</span>
-                  <span className="font-mono text-[#C54B24]">
-                    {(costMetrics.totalProjected - costMetrics.totalSettled).toFixed(2)} tUSD8
-                  </span>
-                </div>
-              </div>
 
-              <Link
-                href="/receipts"
-                className="inline-flex items-center gap-1 text-xs font-medium text-[#C54B24] hover:underline pt-1"
-              >
-                Inspect itemized receipts & A/B benchmark <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
+                <div className="space-y-1.5 pt-3 border-t border-[#DDD7CA] text-xs tabular-nums">
+                  <div className="flex justify-between">
+                    <span className="text-[#5C574E]">AI transcription (x402)</span>
+                    <span className="font-mono text-[#141311]">
+                      {activeJob.inferenceCostTusd8.toFixed(2)} tUSD8
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#5C574E]">Settled human fixes</span>
+                    <span className="font-mono text-[#1B6B46]">
+                      {(costMetrics.totalSettled - activeJob.inferenceCostTusd8).toFixed(2)}{" "}
+                      tUSD8
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#5C574E]">Escrowed pending</span>
+                    <span className="font-mono text-[#C94A22]">
+                      {(costMetrics.totalProjected - costMetrics.totalSettled).toFixed(2)}{" "}
+                      tUSD8
+                    </span>
+                  </div>
+                </div>
+
+                <Link
+                  href="/receipts"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-[#C94A22] hover:underline"
+                >
+                  Open receipts & A/B benchmark <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
             </div>
           )}
 
           {lastX402 && (
-            <div className="rounded-[8px] border border-[#E2DDD2] bg-[#FCFBF8] p-4 space-y-2 text-xs">
+            <div className="rounded-[6px] border border-[#DDD7CA] bg-[#121110] text-[#FBF9F4] p-4 space-y-2 text-xs">
               <div className="flex items-center justify-between">
-                <span className="font-semibold text-[#161513]">x402 Handshake Verified</span>
-                <span className="font-mono text-[11px] px-1.5 py-0.5 rounded-[4px] bg-[#EFECE4] text-[#161513]">
-                  402 → 200
+                <span className="font-semibold">x402 Payment Proof</span>
+                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded-[3px] bg-[#1B6B46] text-[#FBF9F4]">
+                  402 → 200 OK
                 </span>
               </div>
-              <div className="text-[#5C584F] space-y-1 font-mono text-[11px]">
-                <div>Operator: {lastX402.operator}</div>
-                <div>Request: {lastX402.requestId}</div>
-                <div>Settled: {lastX402.amountDisplay}</div>
+              <div className="text-[#ABA498] space-y-1 font-mono text-[11px]">
+                <div>{lastX402.operator}</div>
+                <div>req: {lastX402.requestId}</div>
+                <div className="text-[#FBF9F4]">paid: {lastX402.amountDisplay}</div>
               </div>
             </div>
           )}
@@ -670,11 +786,11 @@ export default function StudioPage() {
 
 function TaskStatusPill({ status }: { status: ReviewTask["status"] }) {
   const styles: Record<ReviewTask["status"], string> = {
-    offered: "bg-[#F9EAE4] text-[#B8381A]",
-    submitted: "bg-[#FBF2DE] text-[#945F00]",
-    accepted: "bg-[#E9F4EE] text-[#1D6B48]",
-    rejected: "bg-[#EFECE4] text-[#5C584F]",
-    expired: "bg-[#EFECE4] text-[#5C584F]",
+    offered: "bg-[#FAEAE4] text-[#C94A22]",
+    submitted: "bg-[#FBF2DD] text-[#945D00]",
+    accepted: "bg-[#E7F4ED] text-[#1B6B46]",
+    rejected: "bg-[#EBE6DB] text-[#5C574E]",
+    expired: "bg-[#EBE6DB] text-[#5C574E]",
   };
   const labels: Record<ReviewTask["status"], string> = {
     offered: "Offered",
