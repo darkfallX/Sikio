@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+dist/
+cache/
+artifacts/
+typechain-types/
+app/data/sikio-state.json
+*.tsbuildinfo
+next-env.d.ts
+SIKIO-CONCEPT.md
+.env
+.env.local
+*.log
