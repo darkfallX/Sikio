@@ -7,6 +7,8 @@ import {
   AlertTriangle,
   Plus,
   CheckCircle2,
+  Copy,
+  Check,
 } from "lucide-react";
 import {
   BatchBudget,
@@ -14,7 +16,12 @@ import {
   PaymentReceipt,
   ReviewTask,
 } from "@/lib/types";
-import { explorerAddressUrl, explorerTxUrl, shortAddr, shortHash } from "@/lib/aevum";
+import {
+  explorerAddressUrl,
+  explorerTxUrl,
+  shortAddr,
+  shortHash,
+} from "@/lib/aevum";
 
 interface ReceiptsState {
   batch: BatchBudget;
@@ -36,6 +43,7 @@ interface ReceiptsState {
 export default function ReceiptsPage() {
   const [data, setData] = useState<ReceiptsState | null>(null);
   const [loading, setLoading] = useState(true);
+  const [copiedAddr, setCopiedAddr] = useState(false);
   const [doublePayResult, setDoublePayResult] = useState<string | null>(null);
   const [showBenchForm, setShowBenchForm] = useState(false);
   const [benchForm, setBenchForm] = useState({
@@ -65,11 +73,18 @@ export default function ReceiptsPage() {
     load();
   }, [load]);
 
+  const copyContract = () => {
+    if (!data?.network.reviewEscrowAddress) return;
+    navigator.clipboard?.writeText(data.network.reviewEscrowAddress);
+    setCopiedAddr(true);
+    setTimeout(() => setCopiedAddr(false), 1600);
+  };
+
   const testDoublePayProtection = async () => {
     const paidTask = data?.tasks.find((t) => t.status === "accepted");
     if (!paidTask) {
       setDoublePayResult(
-        "Accept at least one task first (in Approve), then click to verify exact-once rejection."
+        "Accept at least one task first (in Approve), then probe exact-once rejection here."
       );
       return;
     }
@@ -80,7 +95,7 @@ export default function ReceiptsPage() {
     });
     const json = await res.json();
     setDoublePayResult(
-      `Blocked (HTTP ${res.status}): ${json.error || "Task already settled"}`
+      `HTTP ${res.status} REJECTED -> ${json.error || "Task already settled"}`
     );
   };
 
@@ -101,13 +116,16 @@ export default function ReceiptsPage() {
   if (loading || !data) {
     return (
       <div className="space-y-4">
-        <div className="h-12 w-64 rounded-[6px] bg-[#EFECE4] animate-pulse" />
-        <div className="h-64 rounded-[8px] bg-[#EFECE4] animate-pulse" />
+        <div className="h-12 w-64 rounded-[5px] bg-[#EBE6DB] animate-pulse" />
+        <div className="h-64 rounded-[6px] bg-[#EBE6DB] animate-pulse" />
       </div>
     );
   }
 
-  const totalBenchFullSec = data.benchmarks.reduce((a, b) => a + b.fullReviewSec, 0);
+  const totalBenchFullSec = data.benchmarks.reduce(
+    (a, b) => a + b.fullReviewSec,
+    0
+  );
   const totalBenchTargetedSec = data.benchmarks.reduce(
     (a, b) => a + b.targetedReviewSec,
     0
@@ -123,65 +141,98 @@ export default function ReceiptsPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl sm:text-[28px] font-semibold tracking-[-0.025em] text-[#161513]">
-          Receipts & Audit Trail
+      <div className="pb-4 border-b border-[#DDD7CA]">
+        <div className="text-[11px] font-mono uppercase tracking-[0.08em] text-[#5C574E]">
+          QDay Aevum Testnet · Chain 44005
+        </div>
+        <h1 className="text-2xl sm:text-[30px] font-semibold tracking-[-0.03em] text-[#141311] mt-0.5">
+          Receipts, Controls & A/B Proof
         </h1>
-        <p className="text-sm text-[#5C584F] mt-0.5">
-          Every tUSD8 movement on QDay Aevum (Chain 44005), verified contract invariants, and measured A/B review benchmarks.
+        <p className="text-sm text-[#5C574E] mt-0.5">
+          Every tUSD8 movement, on-chain safety invariant, and honest accuracy trade-off in one audit ledger.
         </p>
       </div>
 
-      {/* Infrastructure Verification Bar */}
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="rounded-[8px] border border-[#E2DDD2] bg-[#FCFBF8] p-4 space-y-1">
-          <div className="text-xs text-[#5C584F]">Aevum Testnet · Chain ID</div>
-          <div className="text-lg font-semibold font-mono text-[#161513]">
-            {data.network.chainId} (0xABE5)
+      {/* Live Contract & Network Bar */}
+      <section className="rounded-[6px] border border-[#DDD7CA] bg-[#121110] text-[#FBF9F4] grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-[#282522]">
+        <div className="p-4 space-y-1">
+          <div className="text-[10px] font-mono uppercase tracking-[0.08em] text-[#9C9589]">
+            Live ReviewEscrow (Chain 44005)
           </div>
-          <div className="text-[11px] font-mono text-[#5C584F] truncate">
-            {data.network.rpcUrl}
+          <div className="flex items-center gap-2">
+            {data.network.reviewEscrowAddress ? (
+              <>
+                <a
+                  href={explorerAddressUrl(data.network.reviewEscrowAddress)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 font-mono text-sm font-semibold text-[#7CE2AC] hover:underline"
+                >
+                  {shortAddr(data.network.reviewEscrowAddress)}
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+                <button
+                  type="button"
+                  onClick={copyContract}
+                  title="Copy contract address"
+                  className="p-1 rounded-[4px] bg-[#1E1C19] text-[#ABA498] hover:text-[#FBF9F4] cursor-pointer"
+                >
+                  {copiedAddr ? (
+                    <Check className="w-3 h-3 text-[#7CE2AC]" />
+                  ) : (
+                    <Copy className="w-3 h-3" />
+                  )}
+                </button>
+              </>
+            ) : (
+              <span className="text-sm font-mono">Not configured</span>
+            )}
+          </div>
+          <div className="text-[11px] text-[#8A8378]">
+            12 / 12 Solidity tests · 8 live Aevum tx verified
           </div>
         </div>
 
-        <div className="rounded-[8px] border border-[#E2DDD2] bg-[#FCFBF8] p-4 space-y-1">
-          <div className="text-xs text-[#5C584F]">tUSD8 Token (6 decimals)</div>
+        <div className="p-4 space-y-1">
+          <div className="text-[10px] font-mono uppercase tracking-[0.08em] text-[#9C9589]">
+            Settlement Token (tUSD8 · 6 dec)
+          </div>
           <a
             href={explorerAddressUrl(data.network.tusd8Address)}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 text-sm font-semibold font-mono text-[#161513] hover:text-[#C54B24]"
+            className="inline-flex items-center gap-1 font-mono text-sm font-semibold text-[#FBF9F4] hover:text-[#C94A22]"
           >
             {shortAddr(data.network.tusd8Address)}
             <ExternalLink className="w-3.5 h-3.5" />
           </a>
-          <div className="text-[11px] text-[#5C584F]">
+          <div className="text-[11px] text-[#8A8378]">
             EntryPoint v0.7 verified live on Aevum
           </div>
         </div>
 
-        <div className="rounded-[8px] border border-[#E2DDD2] bg-[#FCFBF8] p-4 space-y-1">
-          <div className="text-xs text-[#5C584F]">Execution Mode & Escrow</div>
-          <div className="text-sm font-semibold text-[#161513]">
-            {data.network.reviewEscrowAddress
-              ? `Live ReviewEscrow (${shortAddr(data.network.reviewEscrowAddress)})`
-              : "Sandbox Ledger (12/12 Solidity tests verified)"}
+        <div className="p-4 space-y-1">
+          <div className="text-[10px] font-mono uppercase tracking-[0.08em] text-[#9C9589]">
+            Trust Boundary
           </div>
-          <div className="text-[11px] text-[#5C584F]">
-            Chain proves payment once; approver proves text accuracy.
+          <div className="text-sm font-semibold text-[#FBF9F4]">
+            Chain proves payment once
+          </div>
+          <div className="text-[11px] text-[#8A8378]">
+            Named agency approver proves text correctness.
           </div>
         </div>
       </section>
 
-      {/* Itemized Payment Ledger */}
-      <section className="rounded-[8px] border border-[#E2DDD2] bg-[#FCFBF8] overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-[#E2DDD2] flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-[#161513]">
-            Payment Ledger ({data.receipts.length} events)
+      {/* Payment Ledger */}
+      <section className="rounded-[6px] border border-[#DDD7CA] bg-[#FBF9F4] overflow-hidden">
+        <div className="px-5 py-3 border-b border-[#DDD7CA] bg-[#F4F1EA]/70 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-xs font-mono uppercase tracking-[0.06em] font-semibold text-[#141311]">
+            Payment Ledger ({data.receipts.length})
           </h2>
-          <span className="text-xs font-mono text-[#5C584F] tabular-nums">
-            Settled: {data.batch.spentTusd8.toFixed(2)} tUSD8 · Reserved:{" "}
-            {data.batch.reservedTusd8.toFixed(2)} tUSD8 · Available:{" "}
+          <span className="text-xs font-mono text-[#5C574E] tabular-nums">
+            Settled {data.batch.spentTusd8.toFixed(2)} · Escrowed{" "}
+            {data.batch.reservedTusd8.toFixed(2)} · Left{" "}
             {data.availableBudgetTusd8.toFixed(2)} tUSD8
           </span>
         </div>
@@ -189,36 +240,36 @@ export default function ReceiptsPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="border-b border-[#E2DDD2] bg-[#F7F5F0] text-[#5C584F]">
+              <tr className="border-b border-[#DDD7CA] bg-[#F4F1EA] text-[#5C574E] font-mono uppercase text-[10px] tracking-[0.05em]">
                 <th className="py-2.5 px-4 font-medium">Event</th>
                 <th className="py-2.5 px-4 font-medium">Flow</th>
                 <th className="py-2.5 px-4 font-medium text-right">Amount</th>
                 <th className="py-2.5 px-4 font-medium">Gas</th>
-                <th className="py-2.5 px-4 font-medium">Receipt</th>
+                <th className="py-2.5 px-4 font-medium">Explorer Receipt</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E2DDD2]">
+            <tbody className="divide-y divide-[#DDD7CA]">
               {data.receipts.map((r) => (
-                <tr key={r.id} className="hover:bg-[#F7F5F0]/60">
+                <tr key={r.id} className="hover:bg-[#F4F1EA]/60">
                   <td className="py-3 px-4 align-top">
                     <ReceiptBadge kind={r.kind} />
-                    <div className="text-[11px] text-[#5C584F] mt-1 font-mono">
+                    <div className="text-[10px] text-[#847D72] mt-1 font-mono">
                       {new Date(r.timestamp).toLocaleTimeString()}
                     </div>
                   </td>
                   <td className="py-3 px-4 align-top max-w-md">
-                    <div className="font-medium text-[#161513]">{r.actorLabel}</div>
-                    <div className="text-[#5C584F] mt-0.5">{r.note}</div>
+                    <div className="font-semibold text-[#141311]">{r.actorLabel}</div>
+                    <div className="text-[#5C574E] mt-0.5">{r.note}</div>
                     {r.x402Proof && (
-                      <div className="mt-1 inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded-[4px] bg-[#EFECE4] font-mono text-[10px] text-[#161513]">
+                      <div className="mt-1 inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded-[3px] bg-[#EBE6DB] font-mono text-[10px] text-[#141311]">
                         x402 · {r.x402Proof.endpoint} · 402 → 200
                       </div>
                     )}
                   </td>
-                  <td className="py-3 px-4 align-top text-right font-mono font-medium text-[#161513] tabular-nums whitespace-nowrap">
+                  <td className="py-3 px-4 align-top text-right font-mono font-semibold text-[#141311] tabular-nums whitespace-nowrap">
                     {r.amountTusd8.toFixed(2)} tUSD8
                   </td>
-                  <td className="py-3 px-4 align-top text-[#5C584F] whitespace-nowrap">
+                  <td className="py-3 px-4 align-top text-[#5C574E] whitespace-nowrap">
                     {r.gasToken}
                   </td>
                   <td className="py-3 px-4 align-top font-mono whitespace-nowrap">
@@ -226,13 +277,17 @@ export default function ReceiptsPage() {
                       href={explorerTxUrl(r.txHash)}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-[#161513] hover:text-[#C54B24]"
+                      className={`inline-flex items-center gap-1 ${
+                        r.mode === "aevum-live"
+                          ? "text-[#1B6B46] font-semibold hover:underline"
+                          : "text-[#5C574E] hover:text-[#141311]"
+                      }`}
                     >
                       {shortHash(r.txHash)}
                       <ExternalLink className="w-3 h-3" />
                     </a>
-                    <div className="text-[10px] text-[#5C584F]">
-                      {r.mode === "aevum-live" ? "Aevum Testnet" : "Sandbox receipt"}
+                    <div className="text-[10px] text-[#847D72]">
+                      {r.mode === "aevum-live" ? "Live Aevum Tx" : "Sandbox receipt"}
                     </div>
                   </td>
                 </tr>
@@ -242,109 +297,110 @@ export default function ReceiptsPage() {
         </div>
       </section>
 
-      {/* Safety Controls & Live Invariant Probe */}
-      <section className="rounded-[8px] border border-[#E2DDD2] bg-[#FCFBF8] p-5 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Safety Invariants & Live Double-Pay Probe */}
+      <section className="rounded-[6px] border border-[#DDD7CA] bg-[#FBF9F4] overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-[#DDD7CA] bg-[#F4F1EA]/70 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-[#1D6B48]" />
-            <h2 className="text-sm font-semibold text-[#161513]">
+            <ShieldCheck className="w-4 h-4 text-[#1B6B46]" />
+            <h2 className="text-xs font-mono uppercase tracking-[0.06em] font-semibold text-[#141311]">
               On-Chain Safety Controls (ReviewEscrow.sol)
             </h2>
           </div>
           <button
             type="button"
             onClick={testDoublePayProtection}
-            className="px-3 py-1.5 rounded-[6px] text-xs font-medium bg-[#161513] text-[#FCFBF8] hover:bg-[#2E2C28] transition-colors cursor-pointer"
+            className="px-3 py-1.5 rounded-[5px] text-xs font-medium bg-[#141311] text-[#FBF9F4] hover:bg-[#2B2926] transition-colors cursor-pointer"
           >
             Probe Double-Pay Rejection
           </button>
         </div>
 
-        {doublePayResult && (
-          <div className="rounded-[6px] bg-[#F7F5F0] border border-[#E2DDD2] px-3.5 py-2 text-xs font-mono text-[#161513]">
-            {doublePayResult}
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
-          {[
-            [
-              "Exact-once settlement",
-              "Each taskId and x402 requestId settles at most once; repeated acceptTask reverts with TaskNotOpen.",
-            ],
-            [
-              "Budget & per-task caps",
-              "Agent cannot reserve or pay above maxBudget or maxTaskFee, or after batch expiry.",
-            ],
-            [
-              "Trusted editor allowlist",
-              "Agent can only assign tasks to agency-approved native speakers.",
-            ],
-            [
-              "Approver authority",
-              "Only the batch's named approver (or agency) can release funds; editors and agents cannot self-approve.",
-            ],
-            [
-              "Excerpt-only confidentiality",
-              "/api/excerpt slices raw PCM WAV bytes to max 12s; editors never download the full client recording.",
-            ],
-            [
-              "Zero-gas editor UX",
-              "EIP-712 submitCorrectionBySig + ERC-20 payout means editors never need native tQDAY.",
-            ],
-          ].map(([title, desc]) => (
-            <div
-              key={title}
-              className="rounded-[6px] bg-[#F7F5F0] border border-[#E2DDD2] p-3.5 space-y-1"
-            >
-              <div className="font-semibold text-[#161513] flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5 text-[#1D6B48] shrink-0" />
-                {title}
-              </div>
-              <p className="text-[#5C584F] leading-relaxed">{desc}</p>
+        <div className="p-5 space-y-4">
+          {doublePayResult && (
+            <div className="rounded-[5px] bg-[#121110] text-[#FFD3C4] px-3.5 py-2.5 text-xs font-mono">
+              {doublePayResult}
             </div>
-          ))}
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+            {[
+              [
+                "Exact-once settlement",
+                "Each taskId and x402 requestId settles at most once; repeated acceptTask reverts with TaskNotOpen.",
+              ],
+              [
+                "Budget & per-task caps",
+                "Agent cannot spend or reserve past maxBudget, maxTaskFee, or batch expiry.",
+              ],
+              [
+                "Trusted editor allowlist",
+                "Agent can only assign tasks to agency-approved native speakers.",
+              ],
+              [
+                "Named approver authority",
+                "Only batch.approver or batch.agency can release funds; self-approval reverts.",
+              ],
+              [
+                "Excerpt-only confidentiality",
+                "/api/excerpt slices raw PCM WAV bytes server-side to <= 12s; editors never receive full recordings.",
+              ],
+              [
+                "Zero-gas editor UX",
+                "EIP-712 submitCorrectionBySig verified live on Aevum 44005 with a 0-tQDAY editor wallet.",
+              ],
+            ].map(([title, desc]) => (
+              <div
+                key={title}
+                className="rounded-[5px] bg-[#F4F1EA] border border-[#DDD7CA] p-3.5 space-y-1"
+              >
+                <div className="font-semibold text-[#141311] flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#1B6B46] shrink-0" />
+                  {title}
+                </div>
+                <p className="text-[#5C574E] leading-relaxed">{desc}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
-      {/* Decisive A/B Test Results (Full Review vs Targeted Review — including honest miss rates!) */}
-      <section className="rounded-[8px] border border-[#E2DDD2] bg-[#FCFBF8] overflow-hidden">
-        <div className="px-5 py-4 border-b border-[#E2DDD2] flex flex-wrap items-center justify-between gap-3">
+      {/* Decisive A/B Benchmark with Visual Bars */}
+      <section className="rounded-[6px] border border-[#DDD7CA] bg-[#FBF9F4] overflow-hidden">
+        <div className="px-5 py-4 border-b border-[#DDD7CA] bg-[#F4F1EA]/70 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-[#161513]">
-              Decisive A/B Benchmark: Full Review vs. Sikio Targeted Review
+            <h2 className="text-xs font-mono uppercase tracking-[0.06em] font-semibold text-[#141311]">
+              Decisive A/B Benchmark · Full Review vs. Sikio Targeted
             </h2>
-            <p className="text-xs text-[#5C584F] mt-0.5">
-              Measured time, cost, and residual errors — explicitly reporting overconfident AI misses above threshold.
+            <p className="text-xs text-[#5C574E] mt-0.5">
+              Includes measured time savings and honest reporting of overconfident AI misses above threshold.
             </p>
           </div>
           <button
             type="button"
             onClick={() => setShowBenchForm((v) => !v)}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-[6px] text-xs font-medium bg-[#EFECE4] text-[#161513] hover:bg-[#E2DDD2] cursor-pointer"
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-[5px] text-xs font-medium bg-[#141311] text-[#FBF9F4] hover:bg-[#2B2926] cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" /> Log A/B Run
           </button>
         </div>
 
-        {/* Summary Strip */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[#E2DDD2] border-b border-[#E2DDD2] bg-[#F7F5F0] text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[#DDD7CA] border-b border-[#DDD7CA] bg-[#FBF9F4] text-xs">
           <div className="p-4">
-            <div className="text-[#5C584F]">Average review time saved</div>
-            <div className="text-xl font-semibold text-[#1D6B48] tabular-nums mt-0.5">
+            <div className="text-[#5C574E]">Review time saved</div>
+            <div className="text-2xl font-semibold text-[#1B6B46] tabular-nums mt-0.5">
               {avgTimeSavedPct}% faster
             </div>
           </div>
           <div className="p-4">
-            <div className="text-[#5C584F]">Overconfident AI misses logged</div>
-            <div className="text-xl font-semibold text-[#945F00] tabular-nums mt-0.5">
+            <div className="text-[#5C574E]">Overconfident AI misses</div>
+            <div className="text-2xl font-semibold text-[#945D00] tabular-nums mt-0.5">
               {totalOverconfidentMisses} across {data.benchmarks.length} clips
             </div>
           </div>
           <div className="p-4 flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 text-[#945F00] shrink-0 mt-0.5" />
-            <div className="text-[#5C584F] leading-snug">
-              <strong className="text-[#161513]">Honest limit:</strong> When ASR is confidently wrong (&gt;78%), targeted review misses it unless the agency lowers the floor.
+            <AlertTriangle className="w-4 h-4 text-[#945D00] shrink-0 mt-0.5" />
+            <div className="text-[#5C574E] leading-snug">
+              <strong className="text-[#141311]">Honest limit:</strong> Confidently wrong ASR words (&gt;78%) slip through targeted review unless the agency raises the confidence floor.
             </div>
           </div>
         </div>
@@ -352,7 +408,7 @@ export default function ReceiptsPage() {
         {showBenchForm && (
           <form
             onSubmit={handleAddBenchmark}
-            className="p-5 border-b border-[#E2DDD2] bg-[#F7F5F0] grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs"
+            className="p-5 border-b border-[#DDD7CA] bg-[#F4F1EA] grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs"
           >
             <input
               required
@@ -361,7 +417,7 @@ export default function ReceiptsPage() {
               onChange={(e) =>
                 setBenchForm((f) => ({ ...f, clipTitle: e.target.value }))
               }
-              className="px-3 py-2 rounded-[6px] bg-[#FCFBF8] border border-[#E2DDD2]"
+              className="px-3 py-2 rounded-[5px] bg-[#FBF9F4] border border-[#DDD7CA]"
             />
             <input
               required
@@ -370,7 +426,7 @@ export default function ReceiptsPage() {
               onChange={(e) =>
                 setBenchForm((f) => ({ ...f, dialect: e.target.value }))
               }
-              className="px-3 py-2 rounded-[6px] bg-[#FCFBF8] border border-[#E2DDD2]"
+              className="px-3 py-2 rounded-[5px] bg-[#FBF9F4] border border-[#DDD7CA]"
             />
             <div className="grid grid-cols-2 gap-2">
               <input
@@ -383,7 +439,7 @@ export default function ReceiptsPage() {
                     fullReviewSec: Number(e.target.value),
                   }))
                 }
-                className="px-2.5 py-2 rounded-[6px] bg-[#FCFBF8] border border-[#E2DDD2] font-mono"
+                className="px-2.5 py-2 rounded-[5px] bg-[#FBF9F4] border border-[#DDD7CA] font-mono"
               />
               <input
                 type="number"
@@ -395,13 +451,13 @@ export default function ReceiptsPage() {
                     targetedReviewSec: Number(e.target.value),
                   }))
                 }
-                className="px-2.5 py-2 rounded-[6px] bg-[#FCFBF8] border border-[#E2DDD2] font-mono"
+                className="px-2.5 py-2 rounded-[5px] bg-[#FBF9F4] border border-[#DDD7CA] font-mono"
               />
             </div>
             <div className="sm:col-span-3 flex justify-end">
               <button
                 type="submit"
-                className="px-4 py-1.5 rounded-[6px] bg-[#C54B24] text-[#FCFBF8] font-medium cursor-pointer"
+                className="px-4 py-1.5 rounded-[5px] bg-[#C94A22] text-[#FBF9F4] font-medium cursor-pointer"
               >
                 Save Benchmark Run
               </button>
@@ -412,40 +468,60 @@ export default function ReceiptsPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs tabular-nums">
             <thead>
-              <tr className="border-b border-[#E2DDD2] text-[#5C584F]">
+              <tr className="border-b border-[#DDD7CA] bg-[#F4F1EA] text-[#5C574E] font-mono uppercase text-[10px] tracking-[0.05em]">
                 <th className="py-2.5 px-4 font-medium">Clip</th>
-                <th className="py-2.5 px-4 font-medium">Full Review</th>
-                <th className="py-2.5 px-4 font-medium">Sikio Targeted</th>
-                <th className="py-2.5 px-4 font-medium">Errors Left (Full / Sikio)</th>
-                <th className="py-2.5 px-4 font-medium">Overconfident AI Misses</th>
-                <th className="py-2.5 px-4 font-medium text-right">Cost (Full → Sikio)</th>
+                <th className="py-2.5 px-4 font-medium">Time (Full vs Sikio)</th>
+                <th className="py-2.5 px-4 font-medium">Errors Left</th>
+                <th className="py-2.5 px-4 font-medium">AI Confident Misses</th>
+                <th className="py-2.5 px-4 font-medium text-right">Cost</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E2DDD2]">
-              {data.benchmarks.map((b) => (
-                <tr key={b.id}>
-                  <td className="py-3 px-4">
-                    <div className="font-medium text-[#161513]">{b.clipTitle}</div>
-                    <div className="text-[#5C584F]">{b.dialect}</div>
-                  </td>
-                  <td className="py-3 px-4 font-mono">{b.fullReviewSec}s</td>
-                  <td className="py-3 px-4 font-mono text-[#1D6B48] font-medium">
-                    {b.targetedReviewSec}s
-                  </td>
-                  <td className="py-3 px-4 font-mono">
-                    {b.fullReviewErrorsLeft} / {b.targetedReviewErrorsLeft}
-                  </td>
-                  <td className="py-3 px-4 font-mono text-[#945F00]">
-                    {b.overconfidentAiMisses}
-                  </td>
-                  <td className="py-3 px-4 text-right font-mono">
-                    ${b.fullReviewCostUsd.toFixed(2)} →{" "}
-                    <span className="text-[#1D6B48] font-semibold">
-                      ${b.targetedCostUsd.toFixed(2)}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+            <tbody className="divide-y divide-[#DDD7CA]">
+              {data.benchmarks.map((b) => {
+                const ratio = Math.min(
+                  100,
+                  Math.max(
+                    8,
+                    Math.round((b.targetedReviewSec / Math.max(b.fullReviewSec, 1)) * 100)
+                  )
+                );
+                return (
+                  <tr key={b.id}>
+                    <td className="py-3.5 px-4">
+                      <div className="font-semibold text-[#141311]">{b.clipTitle}</div>
+                      <div className="text-[#5C574E]">{b.dialect}</div>
+                    </td>
+                    <td className="py-3.5 px-4 min-w-[200px]">
+                      <div className="flex items-center justify-between font-mono text-[11px] mb-1">
+                        <span className="text-[#5C574E]">Full {b.fullReviewSec}s</span>
+                        <span className="text-[#1B6B46] font-semibold">
+                          Sikio {b.targetedReviewSec}s
+                        </span>
+                      </div>
+                      <div className="h-2 w-full bg-[#EBE6DB] rounded-[2px] overflow-hidden">
+                        <div
+                          style={{ width: `${ratio}%` }}
+                          className="h-full bg-[#1B6B46]"
+                        />
+                      </div>
+                    </td>
+                    <td className="py-3.5 px-4 font-mono">
+                      {b.fullReviewErrorsLeft} / {b.targetedReviewErrorsLeft}
+                    </td>
+                    <td className="py-3.5 px-4 font-mono text-[#945D00] font-semibold">
+                      {b.overconfidentAiMisses}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-mono">
+                      <span className="text-[#847D72] line-through mr-1.5">
+                        ${b.fullReviewCostUsd.toFixed(2)}
+                      </span>
+                      <span className="text-[#1B6B46] font-semibold">
+                        ${b.targetedCostUsd.toFixed(2)}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -455,19 +531,18 @@ export default function ReceiptsPage() {
 }
 
 function ReceiptBadge({ kind }: { kind: PaymentReceipt["kind"] }) {
-  const map: Record<
-    PaymentReceipt["kind"],
-    { label: string; cls: string }
-  > = {
-    batch_funded: { label: "Batch Funded", cls: "bg-[#EFECE4] text-[#161513]" },
-    x402_inference: { label: "x402 AI Buy", cls: "bg-[#161513] text-[#FCFBF8]" },
-    task_reserved: { label: "Escrow Lock", cls: "bg-[#F9EAE4] text-[#B8381A]" },
-    editor_payout: { label: "Editor Paid", cls: "bg-[#E9F4EE] text-[#1D6B48]" },
-    task_refund: { label: "Budget Refund", cls: "bg-[#FBF2DE] text-[#945F00]" },
+  const map: Record<PaymentReceipt["kind"], { label: string; cls: string }> = {
+    batch_funded: { label: "Batch Funded", cls: "bg-[#EBE6DB] text-[#141311]" },
+    x402_inference: { label: "x402 AI Buy", cls: "bg-[#141311] text-[#FBF9F4]" },
+    task_reserved: { label: "Escrow Lock", cls: "bg-[#FAEAE4] text-[#C94A22]" },
+    editor_payout: { label: "Editor Paid", cls: "bg-[#E7F4ED] text-[#1B6B46]" },
+    task_refund: { label: "Budget Refund", cls: "bg-[#FBF2DD] text-[#945D00]" },
   };
   const item = map[kind];
   return (
-    <span className={`inline-block px-2 py-0.5 rounded-[4px] text-[11px] font-medium ${item.cls}`}>
+    <span
+      className={`inline-block px-2 py-0.5 rounded-[4px] font-mono text-[10px] font-medium ${item.cls}`}
+    >
       {item.label}
     </span>
   );

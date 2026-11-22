@@ -7,7 +7,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <article className="max-w-2xl mx-auto rounded-[8px] border border-[#E2DDD2] bg-[#FCFBF8] p-6 sm:p-8 space-y-5 text-sm leading-relaxed text-[#161513]">
+    <article className="max-w-2xl mx-auto rounded-[6px] border border-[#DDD7CA] bg-[#FBF9F4] p-6 sm:p-8 space-y-5 text-sm leading-relaxed text-[#141311]">
       <h1 className="text-2xl font-semibold tracking-[-0.02em]">Privacy Policy</h1>
       <p className="text-xs font-mono text-[#5C584F]">
         Effective: November 2026 · Sikio

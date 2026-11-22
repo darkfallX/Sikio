@@ -10,12 +10,20 @@ import {
   Shield,
   ArrowRight,
   CheckCircle2,
+  Repeat,
+  Gauge,
 } from "lucide-react";
 import { BatchBudget, ReviewTask } from "@/lib/types";
 
 interface EarState {
   batch: BatchBudget;
   tasks: ReviewTask[];
+}
+
+function notifyNavSync() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("sikio:state-updated"));
+  }
 }
 
 export default function EarPage() {
@@ -25,6 +33,8 @@ export default function EarPage() {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [loopEnabled, setLoopEnabled] = useState(true);
+  const [slowMode, setSlowMode] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -43,6 +53,7 @@ export default function EarPage() {
         }
         return next;
       });
+      notifyNavSync();
     } finally {
       setLoading(false);
     }
@@ -51,6 +62,13 @@ export default function EarPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.loop = loopEnabled;
+      audioRef.current.playbackRate = slowMode ? 0.8 : 1.0;
+    }
+  }, [loopEnabled, slowMode]);
 
   const filteredTasks = useMemo(() => {
     if (!state) return [];
@@ -92,11 +110,12 @@ export default function EarPage() {
       setPlayingId(null);
       return;
     }
-    // Excerpt-only endpoint: editor ONLY receives [start, end] WAV slice (max 12s)
     const src = task.clipId.startsWith("custom-")
       ? "/clips/lagos-fintech-ep14.wav"
       : `/api/excerpt/${task.clipId}?start=${task.start}&end=${task.end}`;
     el.src = src;
+    el.loop = loopEnabled;
+    el.playbackRate = slowMode ? 0.8 : 1.0;
     el.currentTime = 0;
     el.play()
       .then(() => setPlayingId(task.id))
@@ -108,6 +127,10 @@ export default function EarPage() {
     setFeedback(null);
     setSubmittingId(task.id);
     try {
+      if (playingId === task.id && audioRef.current) {
+        audioRef.current.pause();
+        setPlayingId(null);
+      }
       const submittedText = confirmedAiRight
         ? task.aiGuess
         : (drafts[task.id] || "").trim();
@@ -129,8 +152,8 @@ export default function EarPage() {
       await load();
       setFeedback(
         json.task?.status === "accepted"
-          ? `Paid $${task.feeTusd8.toFixed(2)} (tUSD8) immediately under trusted-editor auto-accept.`
-          : `Sent "${submittedText}" for approval. No fee charged to submit.`
+          ? `Paid $${task.feeTusd8.toFixed(2)} immediately.`
+          : `Sent "${submittedText}" for approval. Zero fee charged.`
       );
     } finally {
       setSubmittingId(null);
@@ -140,88 +163,121 @@ export default function EarPage() {
   if (loading || !state) {
     return (
       <div className="max-w-[540px] mx-auto space-y-4">
-        <div className="h-24 rounded-[8px] bg-[#EFECE4] animate-pulse" />
-        <div className="h-56 rounded-[8px] bg-[#EFECE4] animate-pulse" />
+        <div className="h-28 rounded-[6px] bg-[#EBE6DB] animate-pulse" />
+        <div className="h-60 rounded-[6px] bg-[#EBE6DB] animate-pulse" />
       </div>
     );
   }
 
   return (
     <div className="max-w-[540px] mx-auto space-y-5">
-      <audio ref={audioRef} onEnded={() => setPlayingId(null)} />
+      <audio ref={audioRef} onEnded={() => !loopEnabled && setPlayingId(null)} />
 
-      {/* Mobile-first Editor Earnings Header (Zero crypto jargon) */}
-      <div className="rounded-[8px] border border-[#E2DDD2] bg-[#FCFBF8] p-5">
-        <div className="flex items-start justify-between gap-3">
+      {/* Handheld Field Recorder Top Deck — Zero Crypto Jargon */}
+      <div className="rounded-[6px] border border-[#DDD7CA] bg-[#121110] text-[#FBF9F4] overflow-hidden">
+        <div className="p-5 flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-xl font-semibold tracking-[-0.02em] text-[#161513]">
+            <div className="text-[10px] font-mono uppercase tracking-[0.08em] text-[#C94A22]">
+              Native Speaker Desk
+            </div>
+            <h1 className="text-2xl font-semibold tracking-[-0.025em] mt-0.5">
               Ear
             </h1>
-            <p className="text-xs text-[#5C584F] mt-0.5">
-              Listen to a few seconds. Fix the word. Get paid in dollars (tUSD8).
+            <p className="text-xs text-[#ABA498] mt-1">
+              Listen to 3–5 seconds. Type what you hear. Get paid in dollars.
             </p>
           </div>
-          <div className="text-right tabular-nums">
-            <div className="text-[11px] uppercase tracking-wide text-[#5C584F]">
-              Paid today
+          <div className="text-right tabular-nums bg-[#1C1A18] border border-[#2B2825] rounded-[5px] px-3.5 py-2.5">
+            <div className="text-[10px] font-mono uppercase tracking-[0.06em] text-[#9C9589]">
+              Earned
             </div>
-            <div className="text-2xl font-semibold text-[#1D6B48]">
+            <div className="text-2xl font-semibold text-[#7CE2AC]">
               ${earningsPaid.toFixed(2)}
             </div>
             {earningsPending > 0 && (
-              <div className="text-[11px] text-[#945F00]">
-                +${earningsPending.toFixed(2)} awaiting approval
+              <div className="text-[10px] font-mono text-[#F5C97B]">
+                +${earningsPending.toFixed(2)} pending
               </div>
             )}
           </div>
         </div>
 
-        {/* Editor Profile Filter */}
-        <div className="mt-4 pt-3 border-t border-[#E2DDD2] flex flex-wrap items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setSelectedEditor("all")}
-            className={`px-2.5 py-1 rounded-[5px] text-xs font-medium transition-colors cursor-pointer ${
-              selectedEditor === "all"
-                ? "bg-[#161513] text-[#FCFBF8]"
-                : "bg-[#EFECE4] text-[#5C584F] hover:text-[#161513]"
-            }`}
-          >
-            All editors
-          </button>
-          {state.batch.trustedEditors.map((ed) => (
+        {/* Editor Selector + Playback Modifiers */}
+        <div className="px-5 py-3 bg-[#1A1816] border-t border-[#282522] flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
-              key={ed.address}
               type="button"
-              onClick={() => setSelectedEditor(ed.address)}
-              className={`px-2.5 py-1 rounded-[5px] text-xs font-medium transition-colors cursor-pointer ${
-                selectedEditor === ed.address
-                  ? "bg-[#161513] text-[#FCFBF8]"
-                  : "bg-[#EFECE4] text-[#5C584F] hover:text-[#161513]"
+              onClick={() => setSelectedEditor("all")}
+              className={`px-2.5 py-1 rounded-[4px] text-xs font-medium transition-colors cursor-pointer ${
+                selectedEditor === "all"
+                  ? "bg-[#FBF9F4] text-[#141311]"
+                  : "bg-[#262320] text-[#B8B0A4] hover:text-[#FBF9F4]"
               }`}
             >
-              {ed.name.split(" ")[0]} · {ed.city}
+              All
             </button>
-          ))}
-        </div>
+            {state.batch.trustedEditors.map((ed) => (
+              <button
+                key={ed.address}
+                type="button"
+                onClick={() => setSelectedEditor(ed.address)}
+                className={`px-2.5 py-1 rounded-[4px] text-xs font-medium transition-colors cursor-pointer ${
+                  selectedEditor === ed.address
+                    ? "bg-[#FBF9F4] text-[#141311]"
+                    : "bg-[#262320] text-[#B8B0A4] hover:text-[#FBF9F4]"
+                }`}
+              >
+                {ed.name.split(" ")[0]} · {ed.city}
+              </button>
+            ))}
+          </div>
 
-        <div className="mt-3 flex items-center gap-2 text-[11px] text-[#5C584F]">
-          <Shield className="w-3.5 h-3.5 text-[#1D6B48] shrink-0" />
-          <span>
-            Confidentiality active: you receive only the flagged excerpt, and network fees are covered for you.
-          </span>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setLoopEnabled((v) => !v)}
+              title="Loop audio excerpt"
+              className={`inline-flex items-center gap-1 px-2 py-1 rounded-[4px] text-[11px] font-mono transition-colors cursor-pointer ${
+                loopEnabled
+                  ? "bg-[#C94A22] text-[#FBF9F4]"
+                  : "bg-[#262320] text-[#9C9589]"
+              }`}
+            >
+              <Repeat className="w-3 h-3" /> Loop
+            </button>
+            <button
+              type="button"
+              onClick={() => setSlowMode((v) => !v)}
+              title="Slow playback for rapid speech"
+              className={`inline-flex items-center gap-1 px-2 py-1 rounded-[4px] text-[11px] font-mono transition-colors cursor-pointer ${
+                slowMode
+                  ? "bg-[#C94A22] text-[#FBF9F4]"
+                  : "bg-[#262320] text-[#9C9589]"
+              }`}
+            >
+              <Gauge className="w-3 h-3" /> 0.8×
+            </button>
+          </div>
         </div>
       </div>
 
+      {/* Confidentiality Strip */}
+      <div className="rounded-[5px] border border-[#DDD7CA] bg-[#FBF9F4] px-3.5 py-2.5 flex items-center gap-2 text-xs text-[#5C574E]">
+        <Shield className="w-3.5 h-3.5 text-[#1B6B46] shrink-0" />
+        <span>
+          Excerpt-only audio delivered. Full client video stays private; zero fee to submit.
+        </span>
+      </div>
+
       {error && (
-        <div className="rounded-[6px] bg-[#F9EAE4] border border-[#EBC7BA] px-3.5 py-2.5 text-xs text-[#B8381A]">
+        <div className="rounded-[5px] bg-[#FAEAE4] border border-[#E8C5B8] px-3.5 py-2.5 text-xs text-[#B33C17]">
           {error}
         </div>
       )}
 
       {feedback && (
-        <div className="rounded-[6px] bg-[#E9F4EE] border border-[#C6E3D3] px-3.5 py-2.5 text-xs text-[#1D6B48] flex items-center justify-between gap-2">
-          <span className="flex items-center gap-1.5">
+        <div className="rounded-[5px] bg-[#E7F4ED] border border-[#C3E2D1] px-3.5 py-2.5 text-xs text-[#1B6B46] flex items-center justify-between gap-2">
+          <span className="flex items-center gap-1.5 font-medium">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             {feedback}
           </span>
@@ -233,23 +289,23 @@ export default function EarPage() {
 
       {/* Open Tasks Feed */}
       {openTasks.length === 0 ? (
-        <div className="rounded-[8px] border border-[#E2DDD2] bg-[#FCFBF8] p-7 text-center space-y-3">
-          <p className="text-sm font-medium text-[#161513]">
-            No open tasks right now.
+        <div className="rounded-[6px] border border-[#DDD7CA] bg-[#FBF9F4] p-8 text-center space-y-3">
+          <p className="text-sm font-semibold text-[#141311]">
+            All caught up.
           </p>
-          <p className="text-xs text-[#5C584F]">
-            Run a clip in Studio to flag uncertain words, or review submitted fixes in Approve.
+          <p className="text-xs text-[#5C574E]">
+            Run a clip in Studio to flag uncertain passages, or open Approve to settle submitted fixes.
           </p>
           <div className="flex items-center justify-center gap-2 pt-1">
             <Link
               href="/"
-              className="px-3.5 py-2 rounded-[6px] text-xs font-medium bg-[#161513] text-[#FCFBF8]"
+              className="px-4 py-2 rounded-[5px] text-xs font-medium bg-[#141311] text-[#FBF9F4]"
             >
-              Go to Studio
+              Open Studio
             </Link>
             <Link
               href="/approve"
-              className="px-3.5 py-2 rounded-[6px] text-xs font-medium bg-[#EFECE4] text-[#161513]"
+              className="px-4 py-2 rounded-[5px] text-xs font-medium bg-[#EBE6DB] text-[#141311]"
             >
               Open Approve
             </Link>
@@ -257,97 +313,113 @@ export default function EarPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {openTasks.map((task) => {
+          {openTasks.map((task, idx) => {
             const excerptDur = Math.max(0.5, task.end - task.start).toFixed(1);
             const isPlaying = playingId === task.id;
             return (
               <article
                 key={task.id}
-                className="rounded-[8px] border border-[#E2DDD2] bg-[#FCFBF8] p-5 space-y-4"
+                className="rounded-[6px] border border-[#DDD7CA] bg-[#FBF9F4] overflow-hidden"
               >
-                <div className="flex items-center justify-between gap-2">
+                <div className="px-5 py-3 border-b border-[#DDD7CA] bg-[#F4F1EA]/70 flex items-center justify-between gap-2">
                   <div>
-                    <div className="text-xs font-medium text-[#5C584F]">
-                      {task.clipTitle} · {task.editorName} ({task.editorCity})
+                    <div className="text-xs font-semibold text-[#141311]">
+                      Task {idx + 1} · {task.editorName} ({task.editorCity})
                     </div>
-                    <div className="text-[11px] font-mono text-[#5C584F] mt-0.5">
-                      Excerpt {excerptDur}s ({task.start.toFixed(1)}s–{task.end.toFixed(1)}s)
+                    <div className="text-[11px] font-mono text-[#5C574E]">
+                      {task.clipTitle} · {excerptDur}s excerpt
                     </div>
                   </div>
-                  <span className="px-2.5 py-1 rounded-[5px] bg-[#E9F4EE] text-[#1D6B48] text-xs font-semibold tabular-nums">
-                    Earn ${task.feeTusd8.toFixed(2)}
+                  <span className="px-2.5 py-1 rounded-[4px] bg-[#E7F4ED] text-[#1B6B46] text-xs font-mono font-semibold tabular-nums">
+                    +${task.feeTusd8.toFixed(2)}
                   </span>
                 </div>
 
-                {/* Big Thumb-Friendly Excerpt Player */}
-                <button
-                  type="button"
-                  onClick={() => playExcerpt(task)}
-                  className={`w-full py-3 px-4 rounded-[6px] border flex items-center justify-center gap-2 text-sm font-medium transition-colors cursor-pointer ${
-                    isPlaying
-                      ? "bg-[#161513] text-[#FCFBF8] border-[#161513]"
-                      : "bg-[#F7F5F0] text-[#161513] border-[#E2DDD2] hover:border-[#161513]"
-                  }`}
-                >
-                  {isPlaying ? (
-                    <>
-                      <Pause className="w-4 h-4" /> Playing excerpt ({excerptDur}s)…
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-4 h-4" /> Listen to {excerptDur}s excerpt
-                    </>
-                  )}
-                </button>
-
-                {/* Context Sentence */}
-                <div className="rounded-[6px] bg-[#F7F5F0] border border-[#E2DDD2] px-3.5 py-3 text-[15px] leading-relaxed text-[#161513]">
-                  <span className="text-[#5C584F]">{task.contextBefore} </span>
-                  <mark className="px-1.5 py-0.5 rounded-[4px] bg-[#F9EAE4] text-[#B8381A] font-semibold">
-                    {task.aiGuess}
-                  </mark>
-                  <span className="text-[#5C584F]"> {task.contextAfter}</span>
-                </div>
-
-                {/* Fix Input */}
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor={`fix-${task.id}`}
-                    className="block text-xs font-medium text-[#5C584F]"
-                  >
-                    What did the speaker actually say?
-                  </label>
-                  <input
-                    id={`fix-${task.id}`}
-                    type="text"
-                    value={drafts[task.id] ?? task.aiGuess}
-                    onChange={(e) =>
-                      setDrafts((prev) => ({ ...prev, [task.id]: e.target.value }))
-                    }
-                    className="w-full px-3.5 py-2.5 rounded-[6px] text-base font-medium bg-[#FCFBF8] border border-[#CFC8B8] text-[#161513] focus:border-[#C54B24]"
-                    placeholder="Type the exact word or phrase"
-                  />
-                </div>
-
-                {/* Actions */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="p-5 space-y-4">
+                  {/* Tactile Audio Button */}
                   <button
                     type="button"
-                    disabled={submittingId === task.id}
-                    onClick={() => handleSubmit(task, false)}
-                    className="inline-flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-[6px] text-sm font-medium bg-[#C54B24] text-[#FCFBF8] hover:bg-[#A93E1B] transition-colors disabled:opacity-50 cursor-pointer"
+                    onClick={() => playExcerpt(task)}
+                    className={`w-full py-3.5 px-4 rounded-[5px] border flex items-center justify-center gap-2.5 text-sm font-semibold transition-colors cursor-pointer ${
+                      isPlaying
+                        ? "bg-[#141311] text-[#FBF9F4] border-[#141311]"
+                        : "bg-[#F4F1EA] text-[#141311] border-[#C7BFB0] hover:border-[#141311]"
+                    }`}
                   >
-                    <Send className="w-4 h-4" />
-                    {submittingId === task.id ? "Sending…" : "Submit Fix"}
+                    {isPlaying ? (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-[#C94A22] sikio-led-live" />
+                        <Pause className="w-4 h-4" />
+                        <span>Playing {excerptDur}s excerpt{slowMode ? " (0.8×)" : ""}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-4 h-4 fill-current" />
+                        <span>Listen to {excerptDur}s excerpt</span>
+                      </>
+                    )}
                   </button>
-                  <button
-                    type="button"
-                    disabled={submittingId === task.id}
-                    onClick={() => handleSubmit(task, true)}
-                    className="inline-flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-[6px] text-sm font-medium bg-[#EFECE4] text-[#161513] hover:bg-[#E2DDD2] transition-colors disabled:opacity-50 cursor-pointer"
+
+                  {/* Context Script */}
+                  <div className="rounded-[5px] bg-[#F4F1EA] border border-[#DDD7CA] px-4 py-3 text-[15px] leading-relaxed text-[#141311]">
+                    <span className="text-[#5C574E]">{task.contextBefore} </span>
+                    <mark className="px-1.5 py-0.5 rounded-[4px] bg-[#FAEAE4] text-[#B33C17] font-semibold">
+                      {task.aiGuess}
+                    </mark>
+                    <span className="text-[#5C574E]"> {task.contextAfter}</span>
+                  </div>
+
+                  {/* Fix Form (Enter submits directly) */}
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleSubmit(task, false);
+                    }}
+                    className="space-y-3"
                   >
-                    <Check className="w-4 h-4" /> AI was right
-                  </button>
+                    <div className="space-y-1.5">
+                      <label
+                        htmlFor={`fix-${task.id}`}
+                        className="block text-xs font-medium text-[#5C574E]"
+                      >
+                        Correct spelling or word heard
+                      </label>
+                      <input
+                        id={`fix-${task.id}`}
+                        type="text"
+                        value={drafts[task.id] ?? task.aiGuess}
+                        onChange={(e) =>
+                          setDrafts((prev) => ({
+                            ...prev,
+                            [task.id]: e.target.value,
+                          }))
+                        }
+                        className="w-full px-3.5 py-3 rounded-[5px] text-base font-medium bg-[#FFFFFF] border border-[#C7BFB0] text-[#141311] focus:border-[#C94A22]"
+                        placeholder="Type what the speaker said"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <button
+                        type="submit"
+                        disabled={submittingId === task.id}
+                        className="inline-flex items-center justify-center gap-1.5 py-3 px-4 rounded-[5px] text-sm font-semibold bg-[#C94A22] text-[#FBF9F4] hover:bg-[#AB3B18] transition-colors disabled:opacity-50 cursor-pointer"
+                      >
+                        <Send className="w-4 h-4" />
+                        {submittingId === task.id
+                          ? "Sending…"
+                          : `Submit Fix · $${task.feeTusd8.toFixed(2)}`}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={submittingId === task.id}
+                        onClick={() => handleSubmit(task, true)}
+                        className="inline-flex items-center justify-center gap-1.5 py-3 px-4 rounded-[5px] text-sm font-medium bg-[#EBE6DB] text-[#141311] hover:bg-[#DDD7CA] transition-colors disabled:opacity-50 cursor-pointer"
+                      >
+                        <Check className="w-4 h-4" /> AI was right
+                      </button>
+                    </div>
+                  </form>
                 </div>
               </article>
             );
@@ -355,47 +427,47 @@ export default function EarPage() {
         </div>
       )}
 
-      {/* Recent Editor Activity */}
+      {/* Completed Feed */}
       {completedTasks.length > 0 && (
-        <section className="rounded-[8px] border border-[#E2DDD2] bg-[#FCFBF8] p-4 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-[#5C584F]">
+        <section className="rounded-[6px] border border-[#DDD7CA] bg-[#FBF9F4] overflow-hidden">
+          <div className="px-4 py-3 border-b border-[#DDD7CA] bg-[#F4F1EA]/70 flex items-center justify-between">
+            <h2 className="text-[11px] font-mono uppercase tracking-[0.06em] font-semibold text-[#5C574E]">
               Submitted & Paid ({completedTasks.length})
             </h2>
             <Link
               href="/approve"
-              className="text-xs font-medium text-[#C54B24] inline-flex items-center gap-1 hover:underline"
+              className="text-xs font-medium text-[#C94A22] inline-flex items-center gap-1 hover:underline"
             >
-              View in Approve <ArrowRight className="w-3 h-3" />
+              Approve desk <ArrowRight className="w-3 h-3" />
             </Link>
           </div>
-          <div className="divide-y divide-[#E2DDD2]">
+          <div className="divide-y divide-[#DDD7CA]">
             {completedTasks.slice(0, 8).map((t) => (
               <div
                 key={t.id}
-                className="py-2 flex items-center justify-between gap-2 text-xs"
+                className="px-4 py-2.5 flex items-center justify-between gap-2 text-xs"
               >
                 <div className="truncate">
-                  <span className="line-through text-[#5C584F] mr-1.5">
+                  <span className="line-through text-[#847D72] mr-1.5">
                     {t.aiGuess}
                   </span>
-                  <span className="font-medium text-[#161513]">
+                  <span className="font-semibold text-[#141311]">
                     {t.submittedText || t.aiGuess}
                   </span>
                 </div>
                 <span
-                  className={`shrink-0 px-2 py-0.5 rounded-[4px] font-medium tabular-nums ${
+                  className={`shrink-0 px-2 py-0.5 rounded-[4px] font-mono font-medium tabular-nums ${
                     t.status === "accepted"
-                      ? "bg-[#E9F4EE] text-[#1D6B48]"
+                      ? "bg-[#E7F4ED] text-[#1B6B46]"
                       : t.status === "submitted"
-                      ? "bg-[#FBF2DE] text-[#945F00]"
-                      : "bg-[#EFECE4] text-[#5C584F]"
+                      ? "bg-[#FBF2DD] text-[#945D00]"
+                      : "bg-[#EBE6DB] text-[#5C574E]"
                   }`}
                 >
                   {t.status === "accepted"
                     ? `Paid $${t.feeTusd8.toFixed(2)}`
                     : t.status === "submitted"
-                    ? "Pending approval"
+                    ? "Pending"
                     : t.status}
                 </span>
               </div>
