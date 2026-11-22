@@ -1,20 +1,24 @@
 @import "tailwindcss";
 
 :root {
-  --bg-canvas: #f7f5f0;
-  --bg-surface: #fcfbf8;
-  --bg-subtle: #efece4;
-  --border: #e2ddd2;
-  --border-strong: #cfc8b8;
-  --ink: #161513;
-  --ink-muted: #5c584f;
-  --accent: #c54b24;
-  --accent-hover: #a93e1b;
-  --accent-soft: #f9eae4;
-  --ok: #1d6b48;
-  --ok-soft: #e9f4ee;
-  --warn: #945f00;
-  --warn-soft: #fbf2de;
+  --bg-canvas: #f4f1ea;
+  --bg-surface: #fbf9f4;
+  --bg-elevated: #ffffff;
+  --bg-subtle: #ebe6db;
+  --bg-monitor: #121110;
+  --bg-monitor-elevated: #1c1a18;
+  --border: #ddd7ca;
+  --border-strong: #c7bfb0;
+  --ink: #141311;
+  --ink-muted: #5c574e;
+  --ink-faint: #847d72;
+  --accent: #c94a22;
+  --accent-hover: #ab3b18;
+  --accent-soft: #faeae4;
+  --ok: #1b6b46;
+  --ok-soft: #e7f4ed;
+  --warn: #945d00;
+  --warn-soft: #fbf2dd;
 }
 
 @theme inline {
@@ -33,19 +37,76 @@ body {
   font-family: var(--font-outfit), "Outfit", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
 
-/* Custom restrained range slider */
+/* Precision architectural range input (no gradients) */
 input[type="range"] {
-  accent-color: var(--accent);
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: var(--border-strong);
+  border-radius: 2px;
+  outline: none;
 }
 
-/* Subtle architectural focus ring */
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--ink);
+  border: 2px solid var(--bg-surface);
+  cursor: pointer;
+  transition: background-color 140ms ease, transform 140ms ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  background: var(--accent);
+  transform: scale(1.08);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--ink);
+  border: 2px solid var(--bg-surface);
+  cursor: pointer;
+}
+
+/* Keyboard accessibility focus ring */
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+@keyframes sikio-led {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.sikio-led-live {
+  animation: sikio-led 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sikio-led-live {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }

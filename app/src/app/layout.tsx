@@ -3,6 +3,7 @@ import { Outfit, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { WalletProvider } from "@/components/WalletContext";
 import { TopNav } from "@/components/TopNav";
+import { AEVUM_CONFIG, explorerAddressUrl, shortAddr } from "@/lib/aevum";
 import Link from "next/link";
 
 const outfit = Outfit({
@@ -16,7 +17,7 @@ const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
   variable: "--font-jetbrains-mono",
   display: "swap",
-  weight: ["400", "500"],
+  weight: ["400", "500", "600"],
 });
 
 export const metadata: Metadata = {
@@ -44,30 +45,37 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${outfit.variable} ${jetbrainsMono.variable}`}>
-      <body className="min-h-screen flex flex-col bg-[#F7F5F0] text-[#161513]">
+      <body className="min-h-screen flex flex-col bg-[#F4F1EA] text-[#141311]">
         <WalletProvider>
           <TopNav />
-          <main className="flex-1 w-full max-w-[1260px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <main className="flex-1 w-full max-w-[1320px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
             {children}
           </main>
-          <footer className="border-t border-[#E2DDD2] bg-[#FCFBF8] mt-12">
-            <div className="max-w-[1260px] mx-auto px-4 sm:px-6 lg:px-8 py-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-[#5C584F]">
+          <footer className="border-t border-[#DDD7CA] bg-[#FBF9F4] mt-16">
+            <div className="max-w-[1320px] mx-auto px-4 sm:px-6 lg:px-8 py-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-[#5C574E]">
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                <span className="font-semibold text-[#161513]">Sikio</span>
+                <span className="font-semibold text-[#141311]">Sikio</span>
                 <span>QDay Aevum Testnet (Chain 44005)</span>
+                <a
+                  href={explorerAddressUrl(AEVUM_CONFIG.reviewEscrowAddress)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-mono hover:text-[#141311] underline-offset-2 hover:underline"
+                >
+                  ReviewEscrow {shortAddr(AEVUM_CONFIG.reviewEscrowAddress)}
+                </a>
                 <span className="font-mono">tUSD8 · 0x4565…3483</span>
-                <span>Test tokens only</span>
               </div>
               <div className="flex items-center gap-4">
                 <Link
                   href="/legal/terms"
-                  className="hover:text-[#161513] underline-offset-2 hover:underline"
+                  className="hover:text-[#141311] underline-offset-2 hover:underline"
                 >
                   Terms
                 </Link>
                 <Link
                   href="/legal/privacy"
-                  className="hover:text-[#161513] underline-offset-2 hover:underline"
+                  className="hover:text-[#141311] underline-offset-2 hover:underline"
                 >
                   Privacy
                 </Link>
@@ -75,15 +83,15 @@ export default function RootLayout({
                   href="https://explorer-test.qday.info"
                   target="_blank"
                   rel="noreferrer"
-                  className="hover:text-[#161513] underline-offset-2 hover:underline"
+                  className="hover:text-[#141311] underline-offset-2 hover:underline"
                 >
-                  Aevum Explorer
+                  Explorer
                 </a>
                 <a
                   href="https://faucet.qday.info/en"
                   target="_blank"
                   rel="noreferrer"
-                  className="hover:text-[#161513] underline-offset-2 hover:underline"
+                  className="hover:text-[#141311] underline-offset-2 hover:underline"
                 >
                   Faucet
                 </a>
