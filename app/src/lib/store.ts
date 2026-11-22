@@ -28,9 +28,9 @@ function makeSandboxTxHash(seed: string): `0x${string}` {
 
 function defaultState(): SikioState {
   const nowSec = Math.floor(Date.now() / 1000);
-  const agencyAddress: `0x${string}` = "0xA9E0C10000000000000000000000000000001001";
-  const agentAddress: `0x${string}` = "0x51C10A9E00000000000000000000000000002002";
-  const approverAddress: `0x${string}` = "0xA990B30000000000000000000000000000003003";
+  const agencyAddress: `0x${string}` = "0x75d0a558A7070868d23E5EF1FfaAcFe36C2B4D03";
+  const agentAddress: `0x${string}` = "0x75d0a558A7070868d23E5EF1FfaAcFe36C2B4D03";
+  const approverAddress: `0x${string}` = "0x75d0a558A7070868d23E5EF1FfaAcFe36C2B4D03";
 
   const batch: BatchBudget = {
     batchId: 1,
@@ -74,17 +74,58 @@ function defaultState(): SikioState {
     id: "rcpt-init-batch",
     kind: "batch_funded",
     batchId: 1,
-    amountTusd8: 20.0,
+    amountTusd8: 2.0,
     from: agencyAddress,
-    to: (AEVUM_CONFIG.reviewEscrowAddress ||
-      "0xE5C0000000000000000000000000000000004405") as `0x${string}`,
-    actorLabel: "Agency Batch #1 Deposit",
-    txHash: makeSandboxTxHash("batch-1-deposit"),
-    mode: batch.mode,
-    gasToken: batch.mode === "aevum-live" ? "tQDAY" : "sandbox",
-    note: "Approved 20.00 tUSD8 cap · max 0.50 tUSD8/task · 7d session expiry",
+    to: AEVUM_CONFIG.reviewEscrowAddress,
+    actorLabel: "Verified Live Aevum Batch #1 (createBatch)",
+    txHash:
+      "0x5e7cc05fa7d66b1ba76f6f0f64c634338ba6d285767a357ac1ca7289ff96c026",
+    mode: "aevum-live",
+    gasToken: "tQDAY",
+    note: "Live on-chain Batch #1 on ReviewEscrow (0x36Cf…5E6b) · max 0.50 tUSD8/task · 7d session expiry",
     timestamp: new Date().toISOString(),
   };
+
+  const liveProofReceipts: PaymentReceipt[] = [
+    {
+      id: "rcpt-live-accept",
+      kind: "editor_payout",
+      batchId: 1,
+      amountTusd8: 0.25,
+      from: AEVUM_CONFIG.reviewEscrowAddress,
+      to: "0x2281ff3819AbA842881267DbFecc0a3B7A672D69",
+      actorLabel: "Verified Live Payout -> Zero-Gas Editor (0 tQDAY)",
+      txHash:
+        "0x71820bca063398666435fae1c7633f8ed779cff4df487b01c3a988cedf38b6eb",
+      mode: "aevum-live",
+      gasToken: "tUSD8 (sponsored)",
+      note: 'Relayed EIP-712 correction ("Pay stark" -> "Paystack") accepted & paid once on Aevum 44005',
+      timestamp: new Date().toISOString(),
+    },
+    {
+      id: "rcpt-live-x402",
+      kind: "x402_inference",
+      batchId: 1,
+      amountTusd8: 0.04,
+      from: agentAddress,
+      to: SIKIO_TRANSCRIPTION_PROVIDER,
+      actorLabel: "Verified Live x402 AI Buy (payInference)",
+      txHash:
+        "0xb47b9b577b76f7c697ec5927fc3684ba79758da90da7216597d9f5b79ee05bb0",
+      mode: "aevum-live",
+      gasToken: "tQDAY",
+      note: "Settled 0.04 tUSD8 inside ReviewEscrow Batch #1 for word-level African speech ASR",
+      timestamp: new Date().toISOString(),
+      x402Proof: {
+        protocol: "x402",
+        endpoint: "/api/transcribe (Sikio-operated)",
+        requestId: "sikio-x402-lagos-live",
+        httpStatusFirstCall: 402,
+        httpStatusRetry: 200,
+      },
+    },
+    initialReceipt,
+  ];
 
   // Transparent pilot A/B benchmark runs (explicitly including overconfident-AI misses!)
   const benchmarks: BenchmarkRun[] = [
@@ -139,7 +180,7 @@ function defaultState(): SikioState {
     batch,
     jobs: [],
     tasks: [],
-    receipts: [initialReceipt],
+    receipts: liveProofReceipts,
     benchmarks,
   };
 }
