@@ -34,19 +34,24 @@ interface PaletteCache {
   amber: string;
   amberBg: string;
   paper: string;
+  onPastel: string;
+  outline: string;
 }
 
+/* Candy outline palette: pastel state bands with dark ink inside them. */
 const DEFAULT_PALETTE: PaletteCache = {
-  ink: "#15201b",
-  mute: "#5a6962",
-  line: "#d2d9d4",
-  signal: "#b45f06",
-  signalBg: "#fbecd6",
-  green: "#1d7a3e",
-  greenBg: "#dcefe2",
-  amber: "#2f62c9",
-  amberBg: "#e3ebfa",
+  ink: "#111111",
+  mute: "#5e5a5d",
+  line: "#ecdde6",
+  signal: "#111111",
+  signalBg: "#fff27a",
+  green: "#111111",
+  greenBg: "#c6f4c1",
+  amber: "#111111",
+  amberBg: "#b8efff",
   paper: "#ffffff",
+  onPastel: "#111111",
+  outline: "#111111",
 };
 
 const SAMPLE_COUNT = 120;
@@ -108,18 +113,41 @@ function drawSmoothBezier(
 function readPaletteFromRoot(): PaletteCache {
   if (typeof window === "undefined") return DEFAULT_PALETTE;
   const cs = getComputedStyle(document.documentElement);
+  const v = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback;
+  const onPastel = v("--on-pastel", DEFAULT_PALETTE.onPastel);
   return {
-    ink: cs.getPropertyValue("--ink").trim() || DEFAULT_PALETTE.ink,
-    mute: cs.getPropertyValue("--mute").trim() || DEFAULT_PALETTE.mute,
-    line: cs.getPropertyValue("--line").trim() || DEFAULT_PALETTE.line,
-    signal: cs.getPropertyValue("--signal").trim() || DEFAULT_PALETTE.signal,
-    signalBg: cs.getPropertyValue("--signal-bg").trim() || DEFAULT_PALETTE.signalBg,
-    green: cs.getPropertyValue("--green").trim() || DEFAULT_PALETTE.green,
-    greenBg: cs.getPropertyValue("--green-bg").trim() || DEFAULT_PALETTE.greenBg,
-    amber: cs.getPropertyValue("--heard").trim() || DEFAULT_PALETTE.amber,
-    amberBg: cs.getPropertyValue("--heard-bg").trim() || DEFAULT_PALETTE.amberBg,
-    paper: cs.getPropertyValue("--paper").trim() || DEFAULT_PALETTE.paper,
+    ink: v("--ink", DEFAULT_PALETTE.ink),
+    mute: v("--mute", DEFAULT_PALETTE.mute),
+    line: v("--line", DEFAULT_PALETTE.line),
+    // Inside a state band the wave is drawn in dark ink so it reads on the pastel in both themes
+    signal: onPastel,
+    signalBg: v("--flag-bg", DEFAULT_PALETTE.signalBg),
+    green: onPastel,
+    greenBg: v("--paid-bg", DEFAULT_PALETTE.greenBg),
+    amber: onPastel,
+    amberBg: v("--heard-bg", DEFAULT_PALETTE.amberBg),
+    paper: v("--paper", DEFAULT_PALETTE.paper),
+    onPastel,
+    outline: v("--outline", DEFAULT_PALETTE.outline),
   };
+}
+
+function fillRounded(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number
+) {
+  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath();
+  if (typeof ctx.roundRect === "function") {
+    ctx.roundRect(x, y, w, h, rr);
+  } else {
+    ctx.rect(x, y, w, h);
+  }
+  ctx.fill();
 }
 
 export function OrganicWaveRibbon({
@@ -212,15 +240,7 @@ export function OrganicWaveRibbon({
           : sp.status === "submitted"
           ? pal.amberBg
           : pal.signalBg;
-      ctx.fillRect(x1, 0, x2 - x1, h);
-
-      ctx.fillStyle =
-        sp.status === "accepted"
-          ? pal.green
-          : sp.status === "submitted"
-          ? pal.amber
-          : pal.signal;
-      ctx.fillRect(x1, 0, x2 - x1, 2);
+      fillRounded(ctx, x1, 1, x2 - x1, h - 2, 10);
     }
 
     // 3. Build continuous wavy dual-contour Bezier coordinates
@@ -337,19 +357,20 @@ export function OrganicWaveRibbon({
     // 6. Precision playhead needle
     if (st.interactive && (st.currentTime > 0 || st.playing)) {
       ctx.save();
-      ctx.strokeStyle = pal.signal;
-      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = pal.ink;
+      ctx.lineWidth = 2;
+      ctx.lineCap = "round";
       ctx.beginPath();
-      ctx.moveTo(playX, 0);
-      ctx.lineTo(playX, h);
+      ctx.moveTo(playX, 4);
+      ctx.lineTo(playX, h - 4);
       ctx.stroke();
 
-      ctx.fillStyle = pal.signal;
+      ctx.fillStyle = pal.ink;
       ctx.beginPath();
-      ctx.arc(Math.min(w - 4, Math.max(4, playX)), 5, 3.2, 0, Math.PI * 2);
+      ctx.arc(Math.min(w - 5, Math.max(5, playX)), 5, 4.2, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = pal.paper;
-      ctx.lineWidth = 1;
+      ctx.lineWidth = 1.5;
       ctx.stroke();
       ctx.restore();
     }
@@ -533,7 +554,7 @@ export function OrganicWaveRibbon({
           style={{
             left: `${Math.min(86, Math.max(2, (hoverTime / Math.max(duration, 0.5)) * 100))}%`,
           }}
-          className="pointer-events-none absolute top-1.5 px-1.5 py-0.5 rounded-[4px] bg-[var(--ink)] text-[var(--paper)] font-mono text-[10px] tabular-nums"
+          className="pointer-events-none absolute top-1.5 px-2 py-0.5 rounded-full bg-[var(--ink)] text-[var(--bg)] font-mono text-[10px] font-bold tabular-nums"
         >
           {hoverTime.toFixed(1)}s
         </span>
