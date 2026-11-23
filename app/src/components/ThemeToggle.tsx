@@ -31,7 +31,7 @@ export function ThemeToggle() {
       onClick={toggle}
       aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
       title={dark ? "Light mode" : "Dark mode"}
-      className="h-10 w-10 sm:h-9 sm:w-9 inline-flex items-center justify-center rounded-[8px] hairline bg-[var(--paper)] text-[var(--ink)] hover:bg-[var(--hover)] transition-colors cursor-pointer shrink-0"
+      className="min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] inline-flex items-center justify-center rounded-[8px] hairline bg-[var(--paper)] text-[var(--ink)] hover:bg-[var(--hover)] transition-colors cursor-pointer shrink-0"
     >
       {mounted && dark ? (
         <Sun className="w-4 h-4" strokeWidth={1.8} />
