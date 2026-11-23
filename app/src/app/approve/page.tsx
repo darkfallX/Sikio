@@ -168,20 +168,20 @@ export default function ApprovePage() {
         <div className="space-y-1.5">
           <h1 className="type-page text-[var(--ink)]">Approve</h1>
           <p className="text-[16px] text-[var(--ink-2)]">
-            Approver{" "}
+            Listen, compare, then pay the native speaker once. Approving as{" "}
             <span className="font-mono text-sm">
               {shortAddr(state.batch.approverAddress)}
-            </span>{" "}
-            verifies submitted edits. ReviewEscrow pays once per task.
+            </span>
+            .
           </p>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
           <Link
             href="/"
-            className="min-h-[44px] sm:min-h-[38px] inline-flex items-center px-3.5 rounded-[8px] text-xs font-semibold hairline bg-[var(--paper)] text-[var(--ink)] hover:bg-[var(--hover)]"
+            className="min-h-[44px] sm:min-h-[40px] inline-flex items-center px-4 rounded-[var(--r-sm)] text-sm font-semibold hairline bg-[var(--paper)] text-[var(--ink)] hover:bg-[var(--hover)]"
           >
-            Replay in Studio
+            Open the board in Studio
           </Link>
         </div>
       </section>
@@ -189,7 +189,7 @@ export default function ApprovePage() {
       {error && (
         <div
           role="alert"
-          className="rounded-[12px] hairline bg-[var(--red-bg)] px-5 py-3.5 text-xs font-medium text-[var(--red)]"
+          className="rounded-[var(--r)] bg-[var(--red-bg)] px-5 py-3.5 text-sm font-medium text-[var(--red)]"
         >
           {error}
         </div>
@@ -198,7 +198,7 @@ export default function ApprovePage() {
       {banner && (
         <div
           aria-live="polite"
-          className="rounded-[12px] hairline bg-[var(--green-bg)] px-5 py-3.5 text-xs font-medium text-[var(--green)] flex flex-wrap items-center justify-between gap-2"
+          className="rounded-[var(--r)] bg-[var(--green-bg)] px-5 py-3.5 text-sm font-medium text-[var(--green-ink)] flex flex-wrap items-center justify-between gap-2"
         >
           <span>{banner}</span>
           <Link href="/" className="font-semibold underline underline-offset-2">
@@ -210,25 +210,25 @@ export default function ApprovePage() {
       {/* Queue 1: Submitted edits ready for approval (only queue with Accept!) */}
       <section className="rounded-[12px] hairline double-rule bg-[var(--paper)] hero-elevation overflow-hidden">
         <div className="px-5 py-3 hairline-b bg-[var(--bg)]/45 flex items-center justify-between">
-          <h2 className="type-label">
-            Ready to approve ({submittedQueue.length})
+          <h2 className="text-sm font-bold text-[var(--heard-ink)]">
+            Heard, ready to approve ({submittedQueue.length})
           </h2>
-          <span className="font-mono text-xs tabular-nums text-[var(--mute)]">
-            Escrowed {state.batch.reservedTusd8.toFixed(2)} tUSD8
+          <span className="text-[13px] tabular-nums text-[var(--mute)]">
+            {state.batch.reservedTusd8.toFixed(2)} tUSD8 held
           </span>
         </div>
 
         {submittedQueue.length === 0 ? (
           <div className="p-7 text-sm text-[var(--mute)] flex flex-wrap items-center justify-between gap-3">
             <span>
-              No submitted edits ready yet. Submit a fix in{" "}
+              Nothing to approve yet. Answers from native speakers in{" "}
               <Link
                 href="/ear"
                 className="font-semibold text-[var(--ink)] underline underline-offset-2"
               >
                 Ear
               </Link>{" "}
-              first.
+              show up here.
             </span>
           </div>
         ) : (
@@ -244,8 +244,8 @@ export default function ApprovePage() {
                 >
                   <div className="space-y-3 flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <span className="px-2.5 py-0.5 rounded-full font-mono text-[11px] font-medium bg-[var(--amber-bg)] text-[var(--amber)]">
-                        Submitted
+                      <span className="px-2.5 py-0.5 rounded-full text-[12px] font-semibold bg-[var(--heard-bg)] text-[var(--heard-ink)]">
+                        Heard
                       </span>
                       <span className="font-semibold text-[var(--ink)]">
                         {task.clipTitle}
@@ -261,15 +261,17 @@ export default function ApprovePage() {
                     {/* Split AI vs Editor diff */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 rounded-[10px] hairline overflow-hidden divide-y sm:divide-y-0 sm:divide-x divide-[var(--line)]">
                       <div className="px-4 py-3 bg-[var(--red-bg)]">
-                        <div className="type-label text-[10px]">
-                          AI · {Math.round(task.minConfidence * 100)}%
+                        <div className="text-[12px] font-semibold text-[var(--mute)]">
+                          AI heard, {Math.round(task.minConfidence * 100)}% sure
                         </div>
                         <div className="text-sm font-medium text-[var(--ink)] line-through mt-0.5">
                           {task.aiGuess}
                         </div>
                       </div>
                       <div className="px-4 py-3 bg-[var(--green-bg)]">
-                        <div className="type-label text-[10px]">Editor fix</div>
+                        <div className="text-[12px] font-semibold text-[var(--mute)]">
+                          {task.editorName.split(" ")[0]} heard
+                        </div>
                         <div className="text-sm font-semibold text-[var(--ink)] mt-0.5">
                           {task.submittedText}
                         </div>
@@ -313,9 +315,9 @@ export default function ApprovePage() {
                       type="button"
                       disabled={busyId === task.id}
                       onClick={() => handleAction(task, "accept")}
-                      className="w-full min-h-[44px] px-4 rounded-[8px] text-xs font-semibold bg-[var(--signal)] text-[#fbf8f1] hover:opacity-90 disabled:opacity-50 cursor-pointer"
+                      className="w-full min-h-[44px] px-4 rounded-[var(--r-sm)] text-sm font-semibold bg-[var(--green)] text-white hover:opacity-90 disabled:opacity-50 cursor-pointer"
                     >
-                      Accept · {task.feeTusd8.toFixed(2)}
+                      Approve and pay {task.feeTusd8.toFixed(2)}
                     </button>
                     <div className="grid grid-cols-2 gap-2">
                       <button
@@ -332,7 +334,7 @@ export default function ApprovePage() {
                         onClick={() => handleAction(task, "expire")}
                         className="min-h-[44px] sm:min-h-[38px] px-3 rounded-[8px] text-xs font-medium hairline bg-[var(--paper)] text-[var(--mute)] hover:text-[var(--ink)] cursor-pointer"
                       >
-                        Expire
+                        Return fee
                       </button>
                     </div>
                   </div>
@@ -347,8 +349,8 @@ export default function ApprovePage() {
       {waitingEditors.length > 0 && (
         <section className="rounded-[12px] hairline bg-[var(--paper)] overflow-hidden">
           <div className="px-5 py-3 hairline-b bg-[var(--bg)]/35 flex items-center justify-between">
-            <h2 className="type-label">
-              Waiting on editor ({waitingEditors.length})
+            <h2 className="text-sm font-bold text-[var(--signal-ink)]">
+              Waiting for a native speaker ({waitingEditors.length})
             </h2>
             <Link
               href="/ear"
@@ -365,8 +367,8 @@ export default function ApprovePage() {
               >
                 <div className="space-y-0.5 min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="px-2 py-0.5 rounded-full font-mono text-[10px] bg-[var(--signal-bg)] text-[var(--signal-ink)]">
-                      Offered
+                    <span className="px-2 py-0.5 rounded-full text-[12px] font-semibold bg-[var(--signal-bg)] text-[var(--signal-ink)]">
+                      Needs an ear
                     </span>
                     <span className="font-semibold text-sm text-[var(--ink)]">
                       {task.aiGuess}
@@ -376,7 +378,7 @@ export default function ApprovePage() {
                     </span>
                   </div>
                   <div className="text-[var(--mute)]">
-                    Assigned to {task.editorName} ({task.editorCity}) · {task.feeTusd8.toFixed(2)} tUSD8 escrowed
+                    Sent to {task.editorName} in {task.editorCity} · {task.feeTusd8.toFixed(2)} tUSD8 held
                   </div>
                 </div>
 
@@ -402,7 +404,7 @@ export default function ApprovePage() {
                     onClick={() => handleAction(task, "expire")}
                     className="min-h-[40px] sm:min-h-[34px] px-3 rounded-[8px] hairline bg-[var(--paper)] text-[var(--mute)] hover:text-[var(--ink)] cursor-pointer"
                   >
-                    Expire
+                    Return fee
                   </button>
                 </div>
               </div>
@@ -415,7 +417,7 @@ export default function ApprovePage() {
       {settled.length > 0 && (
         <section className="rounded-[12px] hairline bg-[var(--paper)] overflow-hidden">
           <div className="px-5 py-3 hairline-b bg-[var(--bg)]/35 flex items-center justify-between">
-            <h2 className="type-label">Settled ({settled.length})</h2>
+            <h2 className="text-sm font-bold text-[var(--ink)]">Settled ({settled.length})</h2>
           </div>
           <div className="divide-y divide-[var(--line)]">
             {settled.map((t) => (
@@ -437,13 +439,13 @@ export default function ApprovePage() {
                   <span
                     className={`px-2.5 py-0.5 rounded-full font-mono font-medium tabular-nums ${
                       t.status === "accepted"
-                        ? "bg-[var(--green-bg)] text-[var(--green)]"
+                        ? "bg-[var(--green-bg)] text-[var(--green-ink)]"
                         : "bg-[var(--panel)] text-[var(--mute)]"
                     }`}
                   >
                     {t.status === "accepted"
-                      ? `Paid ${t.feeTusd8.toFixed(2)}`
-                      : `Refunded ${t.feeTusd8.toFixed(2)}`}
+                      ? `Paid once ${t.feeTusd8.toFixed(2)}`
+                      : `Returned ${t.feeTusd8.toFixed(2)}`}
                   </span>
                   {t.settleTxHash && t.settleMode === "aevum-live" ? (
                     <a
