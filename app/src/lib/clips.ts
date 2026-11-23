@@ -26,7 +26,7 @@ export interface ShowcaseClipSpec {
 export const SHOWCASE_CLIPS: ShowcaseClipSpec[] = [
   {
     id: "lagos-fintech-ep14",
-    title: "Tech Point Lagos — Ep. 14",
+    title: "Tech Point Lagos · Ep. 14",
     sourceLabel: "Nigerian English + Pidgin · Podcast Clip",
     languageTag: "en-NG / pcm",
     city: "Lagos",
@@ -48,7 +48,7 @@ export const SHOWCASE_CLIPS: ShowcaseClipSpec[] = [
   },
   {
     id: "nairobi-matatu-doc",
-    title: "Nairobi Mobility Cut — Reel 03",
+    title: "Nairobi Mobility Cut · Reel 03",
     sourceLabel: "Kenyan English + Swahili · Documentary",
     languageTag: "en-KE / sw",
     city: "Nairobi",
@@ -69,7 +69,7 @@ export const SHOWCASE_CLIPS: ShowcaseClipSpec[] = [
   },
   {
     id: "accra-nollywood-scene",
-    title: "Osu Studio Drama — Scene 09",
+    title: "Osu Studio Drama · Scene 09",
     sourceLabel: "Ghanaian English · Creator Studio",
     languageTag: "en-GH",
     city: "Accra",
@@ -116,7 +116,7 @@ export function getClipSpec(clipId: string): ShowcaseClipSpec | undefined {
 
 /**
  * Produces word-level ASR output with exact WAV timestamps and realistic confidence scores.
- * Deterministic hash-based confidence jitter for normal words (0.89–0.98) so every run is reproducible.
+ * Deterministic hash-based confidence jitter for normal words (0.89 to 0.98) so every run is reproducible.
  */
 export function buildShowcaseTranscript(
   clipId: string,

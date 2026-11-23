@@ -410,7 +410,7 @@ export function createJobAndReserveTasks(params: {
       txHash: offerTxHash,
       mode,
       gasToken: mode === "aevum-live" ? "tQDAY" : "sandbox",
-      note: `Reserved for ${cluster.excerptStart.toFixed(1)}s–${cluster.excerptEnd.toFixed(1)}s ("${cluster.aiGuess}")`,
+      note: `Reserved for ${cluster.excerptStart.toFixed(1)}s to ${cluster.excerptEnd.toFixed(1)}s ("${cluster.aiGuess}")`,
       timestamp: new Date().toISOString(),
     });
   });

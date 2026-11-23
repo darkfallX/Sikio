@@ -2,17 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import {
-  Download,
-  Upload,
-  ArrowRight,
-  Play,
-  RefreshCw,
-  CheckCircle2,
-  Clock,
-  AlertCircle,
-  Radio,
-} from "lucide-react";
+import { Download, Upload, ArrowRight, Play, RefreshCw } from "lucide-react";
 import {
   BatchBudget,
   CaptionJob,
@@ -109,7 +99,7 @@ export default function StudioPage() {
       }
       notifyNavSync();
     } catch {
-      setError("Could not reach Sikio backend state.");
+      setError("Could not reach Sikio backend.");
     } finally {
       setLoading(false);
     }
@@ -167,18 +157,17 @@ export default function StudioPage() {
     };
   };
 
-  const runSikioAgent = async (overrideClipId?: string) => {
-    const clipToRun = overrideClipId || selectedClipId;
+  const runSikioAgent = async () => {
     setError(null);
     setNotice(null);
     setRunning(true);
     try {
-      const isCustom = clipToRun === "custom-upload";
+      const isCustom = selectedClipId === "custom-upload";
       const probe402 = await fetch("/api/transcribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          clipId: isCustom ? undefined : clipToRun,
+          clipId: isCustom ? undefined : selectedClipId,
           confidenceThreshold: threshold,
         }),
       });
@@ -194,8 +183,8 @@ export default function StudioPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          clipId: isCustom ? undefined : clipToRun,
-          customTitle: isCustom ? customFileName || "Uploaded Agency Clip" : undefined,
+          clipId: isCustom ? undefined : selectedClipId,
+          customTitle: isCustom ? customFileName || "Uploaded clip" : undefined,
           customAudioUrl: isCustom ? customFileUrl : undefined,
           customDurationSeconds: isCustom ? customDuration : undefined,
           customTranscript: isCustom ? customTranscript : undefined,
@@ -212,16 +201,14 @@ export default function StudioPage() {
       }
 
       await loadState();
-      if (json.job?.id) {
-        setActiveJobId(json.job.id);
-      }
+      if (json.job?.id) setActiveJobId(json.job.id);
       setNotice(
-        `x402 settled 0.04 tUSD8 · Flagged ${json.createdTasks.length} uncertain span${
-          json.createdTasks.length === 1 ? "" : "s"
-        } and locked ${(json.createdTasks.length * feePerTask).toFixed(2)} tUSD8 in ReviewEscrow.`
+        `x402 paid 0.04 tUSD8. Flagged ${json.createdTasks.length} spans and locked ${(
+          json.createdTasks.length * feePerTask
+        ).toFixed(2)} tUSD8.`
       );
     } catch {
-      setError("Network error while running Sikio Agent.");
+      setError("Network error while running agent.");
     } finally {
       setRunning(false);
     }
@@ -242,11 +229,8 @@ export default function StudioPage() {
         body: JSON.stringify({ action: "update_policy", ...patch }),
       });
       const json = await res.json();
-      if (!res.ok) {
-        setError(json.error || "Could not update policy.");
-      } else {
-        await loadState();
-      }
+      if (!res.ok) setError(json.error || "Could not update policy.");
+      else await loadState();
     } finally {
       setPolicyBusy(false);
     }
@@ -275,9 +259,9 @@ export default function StudioPage() {
 
   if (loading || !data) {
     return (
-      <div className="space-y-4">
-        <div className="h-12 w-72 rounded-[5px] bg-[#EBE6DB] animate-pulse" />
-        <div className="h-72 w-full rounded-[6px] bg-[#EBE6DB] animate-pulse" />
+      <div className="space-y-6">
+        <div className="h-16 w-3/4 rounded-[14px] bg-[var(--panel)] animate-pulse" />
+        <div className="h-80 w-full rounded-[14px] bg-[var(--panel)] animate-pulse" />
       </div>
     );
   }
@@ -286,199 +270,195 @@ export default function StudioPage() {
   const pendingApproveCount = data.tasks.filter((t) => t.status === "submitted").length;
 
   return (
-    <div className="space-y-6">
-      {/* Editorial Studio Masthead */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-4 border-b border-[#DDD7CA]">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.08em] text-[#C94A22]">
-            <Radio className="w-3.5 h-3.5" />
-            <span>Broadcast Caption Desk</span>
-          </div>
-          <h1 className="text-2xl sm:text-[32px] font-semibold tracking-[-0.03em] text-[#141311] leading-tight">
-            Pay for the human ear only where AI hesitates.
-          </h1>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          {activeJob && (
-            <>
-              <a
-                href={`/api/jobs/${activeJob.id}/export?format=srt`}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[5px] text-xs font-medium bg-[#FBF9F4] border border-[#DDD7CA] text-[#141311] hover:border-[#141311] transition-colors"
-              >
-                <Download className="w-3.5 h-3.5" /> .SRT
-              </a>
-              <a
-                href={`/api/jobs/${activeJob.id}/export?format=vtt`}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[5px] text-xs font-medium bg-[#FBF9F4] border border-[#DDD7CA] text-[#141311] hover:border-[#141311] transition-colors"
-              >
-                <Download className="w-3.5 h-3.5" /> .VTT
-              </a>
-            </>
-          )}
-          <button
-            type="button"
-            disabled={policyBusy}
-            onClick={handleResetDemo}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[5px] text-xs font-medium text-[#5C574E] bg-[#EBE6DB] hover:text-[#141311] transition-colors cursor-pointer"
-          >
-            <RefreshCw className="w-3.5 h-3.5" /> Reset Batch
-          </button>
-        </div>
-      </div>
-
-      {/* Hardware-Styled Control Deck */}
-      <section className="rounded-[6px] border border-[#DDD7CA] bg-[#FBF9F4] p-4 sm:p-5">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
-          <div className="lg:col-span-5 space-y-2">
-            <span className="block text-[11px] font-mono uppercase tracking-[0.06em] text-[#5C574E]">
-              Input Tape / Custom Upload
-            </span>
-            <div className="flex flex-wrap gap-1.5">
-              {data.showcaseClips.map((c) => {
-                const active = selectedClipId === c.id;
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => setSelectedClipId(c.id)}
-                    className={`px-3 py-1.5 rounded-[5px] text-xs font-medium border transition-colors cursor-pointer ${
-                      active
-                        ? "bg-[#141311] text-[#FBF9F4] border-[#141311]"
-                        : "bg-[#F4F1EA] text-[#141311] border-[#DDD7CA] hover:border-[#141311]"
-                    }`}
-                  >
-                    {c.city}{" "}
-                    <span className="font-mono text-[10px] opacity-75">
-                      {c.languageTag}
-                    </span>
-                  </button>
-                );
-              })}
-              <label
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[5px] text-xs font-medium border cursor-pointer transition-colors ${
-                  selectedClipId === "custom-upload"
-                    ? "bg-[#141311] text-[#FBF9F4] border-[#141311]"
-                    : "bg-[#FBF9F4] text-[#5C574E] border-[#DDD7CA] hover:border-[#141311] hover:text-[#141311]"
-                }`}
-              >
-                <Upload className="w-3.5 h-3.5" />
-                {customFileName ? customFileName.slice(0, 16) : "Upload"}
-                <input
-                  type="file"
-                  accept="audio/*,video/*"
-                  onChange={handleFileUpload}
-                  className="sr-only"
-                />
-              </label>
-            </div>
+    <div className="space-y-16 sm:space-y-24">
+      {/* First viewport: tight display type + single control strip */}
+      <section className="space-y-8">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+          <div className="space-y-3 max-w-3xl">
+            <h1 className="type-display text-[var(--ink)]">
+              AI captions for African voices.
+            </h1>
+            <p className="text-[17px] text-[var(--ink-2)] max-w-xl">
+              When ASR hesitates, Sikio hires a native ear for those seconds and pays once in tUSD8 on Aevum.
+            </p>
           </div>
 
-          <div className="lg:col-span-3 space-y-2">
-            <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-[0.05em]">
-              <label htmlFor="conf-slider" className="text-[#5C574E]">
-                Confidence Floor
-              </label>
-              <span className="font-semibold text-[#141311] tabular-nums">
-                {Math.round(threshold * 100)}%
-              </span>
-            </div>
-            <input
-              id="conf-slider"
-              type="range"
-              min={0.5}
-              max={0.9}
-              step={0.02}
-              value={threshold}
-              onChange={(e) => setThreshold(Number(e.target.value))}
-              className="w-full"
-            />
-          </div>
-
-          <div className="lg:col-span-2 space-y-1.5">
-            <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-[0.05em]">
-              <label htmlFor="fee-input" className="text-[#5C574E]">
-                Task Fee
-              </label>
-              <span className="text-[#847D72]">tUSD8</span>
-            </div>
-            <input
-              id="fee-input"
-              type="number"
-              min={0.05}
-              max={1.0}
-              step={0.05}
-              value={feePerTask}
-              onChange={(e) => setFeePerTask(Number(e.target.value))}
-              className="w-full px-2.5 py-1.5 rounded-[5px] text-sm font-mono bg-[#F4F1EA] border border-[#DDD7CA] text-[#141311]"
-            />
-          </div>
-
-          <div className="lg:col-span-2">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {activeJob && (
+              <>
+                <a
+                  href={`/api/jobs/${activeJob.id}/export?format=srt`}
+                  className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3.5 rounded-[8px] text-xs font-semibold hairline bg-[var(--paper)] text-[var(--ink)] hover:bg-[var(--hover)]"
+                >
+                  <Download className="w-3.5 h-3.5" /> Export .srt
+                </a>
+                <a
+                  href={`/api/jobs/${activeJob.id}/export?format=vtt`}
+                  className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3.5 rounded-[8px] text-xs font-semibold hairline bg-[var(--paper)] text-[var(--ink)] hover:bg-[var(--hover)]"
+                >
+                  <Download className="w-3.5 h-3.5" /> Export .vtt
+                </a>
+              </>
+            )}
             <button
               type="button"
-              disabled={running}
-              onClick={() => runSikioAgent()}
-              className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-[5px] text-sm font-medium bg-[#C94A22] text-[#FBF9F4] hover:bg-[#AB3B18] transition-colors disabled:opacity-50 cursor-pointer"
+              disabled={policyBusy}
+              onClick={handleResetDemo}
+              className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3.5 rounded-[8px] text-xs font-medium hairline bg-[var(--paper)] text-[var(--mute)] hover:text-[var(--ink)] cursor-pointer"
             >
-              <Play className="w-3.5 h-3.5 fill-current" />
-              {running ? "Running…" : "Run Agent"}
+              <RefreshCw className="w-3.5 h-3.5" /> Reset
             </button>
           </div>
         </div>
 
-        {selectedClipId === "custom-upload" && (
-          <div className="mt-3 pt-3 border-t border-[#DDD7CA]">
-            <label className="block text-xs font-medium text-[#5C574E] mb-1">
-              Optional spoken script for local ASR ({customDuration}s detected)
-            </label>
-            <input
-              type="text"
-              value={customTranscript}
-              onChange={(e) => setCustomTranscript(e.target.value)}
-              placeholder="Paste rough transcript or leave blank for Sikio Local ASR Analyzer..."
-              className="w-full px-3 py-1.5 rounded-[5px] text-sm bg-[#F4F1EA] border border-[#DDD7CA] text-[#141311]"
-            />
-          </div>
-        )}
-
-        {error && (
-          <div className="mt-3 flex items-center gap-2 rounded-[5px] bg-[#FAEAE4] border border-[#E8C5B8] px-3 py-2 text-xs text-[#B33C17]">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {notice && (
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-[5px] bg-[#E7F4ED] border border-[#C3E2D1] px-3 py-2 text-xs text-[#1B6B46]">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-              <span>{notice}</span>
+        {/* Shared-border intake strip */}
+        <div className="rounded-[14px] hairline bg-[var(--paper)] overflow-hidden">
+          <div className="grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-[var(--line)]">
+            <div className="lg:col-span-5 p-4 sm:p-5 space-y-2.5">
+              <div className="type-label">Clip</div>
+              <div className="flex flex-wrap gap-1.5">
+                {data.showcaseClips.map((c) => {
+                  const active = selectedClipId === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setSelectedClipId(c.id)}
+                      className={`min-h-[44px] sm:min-h-[36px] px-3 rounded-[8px] text-xs font-medium hairline transition-colors cursor-pointer ${
+                        active
+                          ? "bg-[var(--ink)] text-[var(--paper)]"
+                          : "bg-[var(--bg)] text-[var(--ink)] hover:bg-[var(--hover)]"
+                      }`}
+                    >
+                      {c.city} · <span className="font-mono">{c.languageTag}</span>
+                    </button>
+                  );
+                })}
+                <label
+                  className={`min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-3 rounded-[8px] text-xs font-medium hairline cursor-pointer transition-colors ${
+                    selectedClipId === "custom-upload"
+                      ? "bg-[var(--ink)] text-[var(--paper)]"
+                      : "bg-[var(--paper)] text-[var(--mute)] hover:text-[var(--ink)]"
+                  }`}
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  {customFileName ? customFileName.slice(0, 14) : "Upload"}
+                  <input
+                    type="file"
+                    accept="audio/*,video/*"
+                    onChange={handleFileUpload}
+                    className="sr-only"
+                  />
+                </label>
+              </div>
             </div>
-            <Link
-              href="/ear"
-              className="inline-flex items-center gap-1 font-semibold underline underline-offset-2"
-            >
-              Next: Open Editor Ear <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
+
+            <div className="lg:col-span-3 p-4 sm:p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <label htmlFor="conf-slider" className="type-label">
+                  Confidence floor
+                </label>
+                <span className="font-mono text-xs font-semibold tabular-nums text-[var(--ink)]">
+                  {Math.round(threshold * 100)}%
+                </span>
+              </div>
+              <input
+                id="conf-slider"
+                type="range"
+                min={0.5}
+                max={0.9}
+                step={0.02}
+                value={threshold}
+                onChange={(e) => setThreshold(Number(e.target.value))}
+                className="w-full"
+              />
+            </div>
+
+            <div className="lg:col-span-2 p-4 sm:p-5 space-y-2">
+              <label htmlFor="fee-input" className="block type-label">
+                Task fee (tUSD8)
+              </label>
+              <input
+                id="fee-input"
+                type="number"
+                min={0.05}
+                max={1.0}
+                step={0.05}
+                value={feePerTask}
+                onChange={(e) => setFeePerTask(Number(e.target.value))}
+                className="w-full min-h-[44px] sm:min-h-[36px] px-3 rounded-[8px] font-mono text-sm tabular-nums hairline bg-[var(--bg)] text-[var(--ink)]"
+              />
+            </div>
+
+            <div className="lg:col-span-2 p-4 sm:p-5 flex items-end">
+              <button
+                type="button"
+                disabled={running}
+                onClick={runSikioAgent}
+                className="w-full min-h-[44px] inline-flex items-center justify-center gap-2 px-4 rounded-[8px] text-sm font-semibold bg-[var(--signal)] text-[#faf8f2] hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer"
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                {running ? "Running…" : "Run agent"}
+              </button>
+            </div>
           </div>
-        )}
+
+          {selectedClipId === "custom-upload" && (
+            <div className="p-4 sm:p-5 hairline-t bg-[var(--bg)]/50">
+              <label htmlFor="custom-script" className="block type-label mb-2">
+                Optional transcript ({customDuration}s audio)
+              </label>
+              <input
+                id="custom-script"
+                type="text"
+                value={customTranscript}
+                onChange={(e) => setCustomTranscript(e.target.value)}
+                placeholder="Paste rough transcript or leave empty for local ASR"
+                className="w-full min-h-[44px] px-3 rounded-[8px] text-sm hairline bg-[var(--paper)] text-[var(--ink)]"
+              />
+            </div>
+          )}
+
+          {error && (
+            <div
+              role="alert"
+              className="px-5 py-3 hairline-t bg-[var(--red-bg)] text-xs font-medium text-[var(--red)]"
+            >
+              {error}
+            </div>
+          )}
+
+          {notice && (
+            <div
+              aria-live="polite"
+              className="px-5 py-3 hairline-t bg-[var(--green-bg)] text-xs font-medium text-[var(--green)] flex flex-wrap items-center justify-between gap-2"
+            >
+              <span>{notice}</span>
+              <Link
+                href="/ear"
+                className="inline-flex items-center gap-1 font-semibold underline underline-offset-2"
+              >
+                Open Ear <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          )}
+        </div>
       </section>
 
-      {/* Main Split Workspace */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        <div className="lg:col-span-8 space-y-5">
+      {/* Hero workspace + Budget ledger */}
+      <section className="grid grid-cols-1 lg:grid-cols-12 gap-7 items-start">
+        <div className="lg:col-span-8 space-y-7">
           {data.jobs.length > 1 && (
-            <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-2">
               {data.jobs.map((j) => (
                 <button
                   key={j.id}
                   type="button"
                   onClick={() => setActiveJobId(j.id)}
-                  className={`px-3 py-1.5 rounded-[5px] text-xs font-medium border transition-colors cursor-pointer ${
+                  className={`min-h-[40px] px-3.5 rounded-full text-xs font-medium hairline transition-colors cursor-pointer ${
                     activeJob?.id === j.id
-                      ? "bg-[#141311] text-[#FBF9F4] border-[#141311]"
-                      : "bg-[#FBF9F4] text-[#5C574E] border-[#DDD7CA] hover:text-[#141311]"
+                      ? "bg-[var(--ink)] text-[var(--paper)]"
+                      : "bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--hover)]"
                   }`}
                 >
                   {j.title}
@@ -503,75 +483,62 @@ export default function StudioPage() {
                 onWordClick={handleWordClick}
               />
 
-              {/* Flagged Micro-Review Desk */}
-              <div className="rounded-[6px] border border-[#DDD7CA] bg-[#FBF9F4] overflow-hidden">
-                <div className="px-5 py-3 border-b border-[#DDD7CA] flex flex-wrap items-center justify-between gap-2 bg-[#F4F1EA]/70">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-mono uppercase tracking-[0.06em] text-[#847D72]">
-                      Escrow Queue
-                    </span>
-                    <h2 className="text-sm font-semibold text-[#141311]">
-                      {activeJobTasks.length} Flagged Spans
-                    </h2>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs">
+              {/* Flagged tasks ledger */}
+              <div className="rounded-[14px] hairline bg-[var(--paper)] overflow-hidden">
+                <div className="px-5 py-3.5 hairline-b flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="type-label">
+                    Escrowed tasks ({activeJobTasks.length})
+                  </h2>
+                  <div className="flex items-center gap-4 text-xs font-medium">
                     <Link
                       href="/ear"
-                      className="text-[#C94A22] font-medium hover:underline inline-flex items-center gap-1"
+                      className="text-[var(--signal-ink)] hover:underline"
                     >
-                      Ear ({pendingSubmitCount} open)
-                      <ArrowRight className="w-3 h-3" />
+                      Ear ({pendingSubmitCount})
                     </Link>
                     <Link
                       href="/approve"
-                      className="text-[#141311] font-medium hover:underline inline-flex items-center gap-1"
+                      className="text-[var(--ink)] hover:underline"
                     >
-                      Approve ({pendingApproveCount} waiting)
-                      <ArrowRight className="w-3 h-3" />
+                      Approve ({pendingApproveCount})
                     </Link>
                   </div>
                 </div>
 
                 {activeJobTasks.length === 0 ? (
-                  <div className="p-6 text-sm text-[#5C574E]">
-                    No words scored below{" "}
-                    {Math.round(activeJob.confidenceThreshold * 100)}%. Raise the confidence floor to inspect more words.
+                  <div className="p-6 text-sm text-[var(--mute)]">
+                    No words scored below {Math.round(activeJob.confidenceThreshold * 100)}%.
                   </div>
                 ) : (
-                  <div className="divide-y divide-[#DDD7CA]">
+                  <div className="divide-y divide-[var(--line)]">
                     {activeJobTasks.map((t) => (
                       <div
                         key={t.id}
-                        className="px-5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm hover:bg-[#F4F1EA]/70 transition-colors"
+                        className="px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm hover:bg-[var(--hover)] transition-colors"
                       >
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setSeekToTime(t.start)}
-                              className="font-mono text-[11px] px-1.5 py-0.5 rounded-[4px] bg-[#EBE6DB] text-[#141311] hover:bg-[#DDD7CA] cursor-pointer tabular-nums"
-                            >
-                              {t.start.toFixed(1)}s–{t.end.toFixed(1)}s
-                            </button>
-                            <span className="font-medium text-[#141311]">
-                              “{t.aiGuess}”
+                        <div className="min-w-0 flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setSeekToTime(t.start)}
+                            className="font-mono text-xs px-2 py-0.5 rounded-[6px] bg-[var(--panel)] text-[var(--ink)] tabular-nums cursor-pointer"
+                          >
+                            {t.start.toFixed(1)}s · {t.end.toFixed(1)}s
+                          </button>
+                          <span className="font-semibold text-[var(--ink)]">
+                            {t.aiGuess}
+                          </span>
+                          {t.submittedText && t.submittedText !== t.aiGuess && (
+                            <span className="text-[var(--green)] font-semibold">
+                              → {t.submittedText}
                             </span>
-                            {t.submittedText && t.submittedText !== t.aiGuess && (
-                              <span className="text-[#1B6B46] font-semibold">
-                                → “{t.submittedText}”
-                              </span>
-                            )}
-                            <span className="text-[11px] font-mono text-[#847D72]">
-                              {Math.round(t.minConfidence * 100)}% AI
-                            </span>
-                          </div>
-                          <div className="text-xs text-[#5C574E] mt-0.5">
-                            {t.editorName} ({t.editorCity}) · Excerpt-only WAV
-                          </div>
+                          )}
+                          <span className="font-mono text-xs text-[var(--mute)] tabular-nums">
+                            {Math.round(t.minConfidence * 100)}% · {t.editorCity}
+                          </span>
                         </div>
 
-                        <div className="flex items-center gap-2.5 shrink-0">
-                          <span className="font-mono text-xs font-medium text-[#141311] tabular-nums">
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="font-mono text-xs tabular-nums text-[var(--ink)]">
                             {t.feeTusd8.toFixed(2)} tUSD8
                           </span>
                           <TaskStatusPill status={t.status} />
@@ -583,53 +550,31 @@ export default function StudioPage() {
               </div>
             </>
           ) : (
-            /* Sculptural First-Visit Broadcast Intake Deck */
-            <div className="rounded-[6px] border border-[#DDD7CA] bg-[#FBF9F4] overflow-hidden">
-              <div className="bg-[#121110] text-[#FBF9F4] p-6 sm:p-7 space-y-5">
-                <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-[0.08em] text-[#9C9589]">
-                  <span>African Speech ASR · Where Models Break</span>
-                  <span className="text-[#C94A22]">x402 + ReviewEscrow</span>
+            /* Pre-run hero object: hardware audition monitor */
+            <div className="rounded-[14px] hairline bg-[var(--paper)] hero-elevation overflow-hidden">
+              <div className="bg-[var(--body)] text-[#eeeadf] p-6 sm:p-7 space-y-6">
+                <div className="flex items-center justify-between font-mono text-[11px] uppercase tracking-[0.08em] text-[#9b9586]">
+                  <span>Sample ASR errors</span>
+                  <span>x402 · 0.04 tUSD8</span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-white/10 border border-white/10 rounded-[10px]">
                   {(CLIP_SAMPLE_ERRORS[selectedClipId] ||
                     CLIP_SAMPLE_ERRORS["lagos-fintech-ep14"]
                   ).map(([wrong, right]) => (
-                    <div
-                      key={wrong}
-                      className="rounded-[5px] border border-[#292623] bg-[#1C1A18] p-3.5 space-y-1.5"
-                    >
-                      <div className="text-[11px] font-mono text-[#8A8378]">
-                        AI hears
+                    <div key={wrong} className="p-4 space-y-1">
+                      <div className="text-sm text-[#f3b6a0] line-through">
+                        {wrong}
                       </div>
-                      <div className="text-sm font-medium text-[#FFD3C4] line-through">
-                        “{wrong}”
-                      </div>
-                      <div className="text-sm font-semibold text-[#AEE8C9]">
-                        → “{right}”
+                      <div className="text-base font-semibold text-[#8ee3b8]">
+                        {right}
                       </div>
                     </div>
                   ))}
                 </div>
-
-                <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#262320]">
-                  <p className="text-xs text-[#ABA498] max-w-md">
-                    Pick a real spoken clip below. Sikio pays 0.04 tUSD8 via HTTP 402, isolates the misheard seconds, and locks micro-fees for a native speaker.
-                  </p>
-                  <button
-                    type="button"
-                    disabled={running}
-                    onClick={() => runSikioAgent()}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-[5px] text-xs font-semibold bg-[#C94A22] text-[#FBF9F4] hover:bg-[#AB3B18] transition-colors cursor-pointer"
-                  >
-                    <Play className="w-3.5 h-3.5 fill-current" />
-                    {running ? "Running…" : "Start Live Run · 0.04 tUSD8"}
-                  </button>
-                </div>
               </div>
 
-              {/* 3 Tactile Tape Reels */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[#DDD7CA]">
+              <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[var(--line)]">
                 {data.showcaseClips.map((c, idx) => {
                   const active = selectedClipId === c.id;
                   return (
@@ -637,27 +582,20 @@ export default function StudioPage() {
                       key={c.id}
                       type="button"
                       onClick={() => setSelectedClipId(c.id)}
-                      className={`text-left p-4 transition-colors cursor-pointer ${
+                      className={`text-left p-5 transition-colors cursor-pointer ${
                         active
-                          ? "bg-[#FAEAE4]/55"
-                          : "bg-[#FBF9F4] hover:bg-[#F4F1EA]"
+                          ? "bg-[var(--panel)]"
+                          : "bg-[var(--paper)] hover:bg-[var(--hover)]"
                       }`}
                     >
-                      <div className="flex items-center justify-between text-[11px] font-mono">
-                        <span className="text-[#847D72]">TAPE 0{idx + 1}</span>
-                        <span
-                          className={
-                            active ? "text-[#C94A22] font-semibold" : "text-[#5C574E]"
-                          }
-                        >
+                      <div className="flex items-center justify-between font-mono text-[11px] text-[var(--mute)]">
+                        <span>0{idx + 1}</span>
+                        <span className={active ? "text-[var(--signal-ink)] font-semibold" : ""}>
                           {c.languageTag}
                         </span>
                       </div>
-                      <div className="text-sm font-semibold text-[#141311] mt-1.5">
+                      <div className="text-[15px] font-semibold text-[var(--ink)] mt-2">
                         {c.title}
-                      </div>
-                      <div className="text-xs text-[#5C574E] mt-0.5">
-                        {c.sourceLabel}
                       </div>
                     </button>
                   );
@@ -667,8 +605,8 @@ export default function StudioPage() {
           )}
         </div>
 
-        {/* Right Architectural Rail */}
-        <div className="lg:col-span-4 space-y-5">
+        {/* Right rail: budget + cost comparison */}
+        <div className="lg:col-span-4 space-y-7">
           <BudgetRail
             batch={data.batch}
             availableBudgetTusd8={data.availableBudgetTusd8}
@@ -677,38 +615,35 @@ export default function StudioPage() {
           />
 
           {activeJob && costMetrics && (
-            <div className="rounded-[6px] border border-[#DDD7CA] bg-[#FBF9F4] overflow-hidden">
-              <div className="px-4 py-3 border-b border-[#DDD7CA] flex items-center justify-between bg-[#F4F1EA]/70">
-                <h2 className="text-xs font-semibold uppercase tracking-[0.05em] text-[#141311]">
-                  Publishable Minute Cost
-                </h2>
-                <span className="text-[11px] font-mono px-2 py-0.5 rounded-[4px] bg-[#E7F4ED] text-[#1B6B46] font-medium">
-                  -{costMetrics.reviewTimeSavedPct}% review time
+            <div className="rounded-[14px] hairline bg-[var(--paper)] overflow-hidden">
+              <div className="px-5 py-3.5 hairline-b flex items-center justify-between">
+                <span className="type-label">Cost per minute</span>
+                <span className="px-2 py-0.5 rounded-full font-mono text-[11px] bg-[var(--green-bg)] text-[var(--green)] tabular-nums">
+                  -{costMetrics.reviewTimeSavedPct}% time
                 </span>
               </div>
 
-              <div className="p-4 space-y-3.5">
+              <div className="p-5 space-y-4">
                 <div className="flex items-baseline gap-2 tabular-nums">
-                  <span className="text-3xl font-semibold tracking-[-0.03em] text-[#141311]">
+                  <span className="font-mono text-3xl font-semibold text-[var(--ink)]">
                     ${costMetrics.costPerMinuteProjected.toFixed(2)}
                   </span>
-                  <span className="text-xs text-[#5C574E]">
-                    / min vs. ${costMetrics.fullHumanReviewCostPerMin.toFixed(2)} full review
+                  <span className="font-mono text-xs text-[var(--mute)]">
+                    vs ${costMetrics.fullHumanReviewCostPerMin.toFixed(2)} full
                   </span>
                 </div>
 
-                {/* Visual bar comparison */}
-                <div className="space-y-1.5 text-[11px] font-mono">
+                <div className="space-y-2 font-mono text-xs tabular-nums">
                   <div className="flex items-center gap-2">
-                    <span className="w-12 text-[#5C574E]">Full</span>
-                    <div className="flex-1 h-2 bg-[#EBE6DB] rounded-[2px] overflow-hidden">
-                      <div className="h-full w-full bg-[#B4ACA0]" />
+                    <span className="w-11 text-[var(--mute)]">Full</span>
+                    <div className="flex-1 h-2 rounded-full bg-[var(--panel)] overflow-hidden">
+                      <div className="h-full w-full bg-[var(--mute)]/50" />
                     </div>
-                    <span className="w-11 text-right text-[#5C574E]">$3.50</span>
+                    <span className="w-11 text-right text-[var(--mute)]">$3.50</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="w-12 text-[#141311] font-semibold">Sikio</span>
-                    <div className="flex-1 h-2 bg-[#EBE6DB] rounded-[2px] overflow-hidden">
+                    <span className="w-11 font-semibold text-[var(--ink)]">Sikio</span>
+                    <div className="flex-1 h-2 rounded-full bg-[var(--panel)] overflow-hidden">
                       <div
                         style={{
                           width: `${Math.min(
@@ -721,90 +656,74 @@ export default function StudioPage() {
                             )
                           )}%`,
                         }}
-                        className="h-full bg-[#1B6B46]"
+                        className="h-full bg-[var(--green)]"
                       />
                     </div>
-                    <span className="w-11 text-right text-[#1B6B46] font-semibold">
+                    <span className="w-11 text-right font-semibold text-[var(--green)]">
                       ${costMetrics.costPerMinuteProjected.toFixed(2)}
                     </span>
                   </div>
                 </div>
 
-                <div className="space-y-1.5 pt-3 border-t border-[#DDD7CA] text-xs tabular-nums">
+                <div className="pt-3 hairline-t space-y-1.5 font-mono text-xs tabular-nums">
                   <div className="flex justify-between">
-                    <span className="text-[#5C574E]">AI transcription (x402)</span>
-                    <span className="font-mono text-[#141311]">
-                      {activeJob.inferenceCostTusd8.toFixed(2)} tUSD8
+                    <span className="font-sans text-[var(--mute)]">AI x402</span>
+                    <span>{activeJob.inferenceCostTusd8.toFixed(2)} tUSD8</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-sans text-[var(--mute)]">Human settled</span>
+                    <span className="text-[var(--green)]">
+                      {(costMetrics.totalSettled - activeJob.inferenceCostTusd8).toFixed(2)} tUSD8
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-[#5C574E]">Settled human fixes</span>
-                    <span className="font-mono text-[#1B6B46]">
-                      {(costMetrics.totalSettled - activeJob.inferenceCostTusd8).toFixed(2)}{" "}
-                      tUSD8
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#5C574E]">Escrowed pending</span>
-                    <span className="font-mono text-[#C94A22]">
-                      {(costMetrics.totalProjected - costMetrics.totalSettled).toFixed(2)}{" "}
-                      tUSD8
+                    <span className="font-sans text-[var(--mute)]">Escrowed</span>
+                    <span className="text-[var(--amber)]">
+                      {(costMetrics.totalProjected - costMetrics.totalSettled).toFixed(2)} tUSD8
                     </span>
                   </div>
                 </div>
-
-                <Link
-                  href="/receipts"
-                  className="inline-flex items-center gap-1 text-xs font-medium text-[#C94A22] hover:underline"
-                >
-                  Open receipts & A/B benchmark <ArrowRight className="w-3.5 h-3.5" />
-                </Link>
               </div>
             </div>
           )}
 
           {lastX402 && (
-            <div className="rounded-[6px] border border-[#DDD7CA] bg-[#121110] text-[#FBF9F4] p-4 space-y-2 text-xs">
+            <div className="rounded-[14px] hairline bg-[var(--paper)] px-5 py-4 space-y-1.5 font-mono text-xs tabular-nums">
               <div className="flex items-center justify-between">
-                <span className="font-semibold">x402 Payment Proof</span>
-                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded-[3px] bg-[#1B6B46] text-[#FBF9F4]">
-                  402 → 200 OK
+                <span className="type-label">x402 receipt</span>
+                <span className="px-2 py-0.5 rounded-full bg-[var(--green-bg)] text-[var(--green)] text-[11px]">
+                  402 · 200
                 </span>
               </div>
-              <div className="text-[#ABA498] space-y-1 font-mono text-[11px]">
-                <div>{lastX402.operator}</div>
-                <div>req: {lastX402.requestId}</div>
-                <div className="text-[#FBF9F4]">paid: {lastX402.amountDisplay}</div>
-              </div>
+              <div className="text-[var(--ink)]">{lastX402.amountDisplay}</div>
+              <div className="text-[var(--mute)] truncate">{lastX402.requestId}</div>
             </div>
           )}
         </div>
-      </div>
+      </section>
     </div>
   );
 }
 
 function TaskStatusPill({ status }: { status: ReviewTask["status"] }) {
   const styles: Record<ReviewTask["status"], string> = {
-    offered: "bg-[#FAEAE4] text-[#C94A22]",
-    submitted: "bg-[#FBF2DD] text-[#945D00]",
-    accepted: "bg-[#E7F4ED] text-[#1B6B46]",
-    rejected: "bg-[#EBE6DB] text-[#5C574E]",
-    expired: "bg-[#EBE6DB] text-[#5C574E]",
+    offered: "bg-[var(--signal-bg)] text-[var(--signal-ink)]",
+    submitted: "bg-[var(--amber-bg)] text-[var(--amber)]",
+    accepted: "bg-[var(--green-bg)] text-[var(--green)]",
+    rejected: "bg-[var(--red-bg)] text-[var(--red)]",
+    expired: "bg-[var(--panel)] text-[var(--mute)]",
   };
   const labels: Record<ReviewTask["status"], string> = {
     offered: "Offered",
-    submitted: "In Review",
-    accepted: "Paid Once",
+    submitted: "In review",
+    accepted: "Paid once",
     rejected: "Refunded",
     expired: "Expired",
   };
   return (
     <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-[11px] font-medium ${styles[status]}`}
+      className={`px-2.5 py-0.5 rounded-full font-mono text-[11px] font-medium ${styles[status]}`}
     >
-      {status === "offered" && <Clock className="w-3 h-3" />}
-      {status === "accepted" && <CheckCircle2 className="w-3 h-3" />}
       {labels[status]}
     </span>
   );
