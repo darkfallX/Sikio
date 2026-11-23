@@ -66,6 +66,8 @@ export async function POST(req: NextRequest) {
         action: body.action,
         reason: body.reason,
         approverAddress: body.approverAddress,
+        txHash: body.txHash,
+        mode: body.mode,
       });
       return NextResponse.json({
         ok: true,
@@ -78,6 +80,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Task action failed";
-    return NextResponse.json({ error: message }, { status: 400 });
+    const status = message.startsWith("UNAUTHORIZED:") ? 403 : 400;
+    return NextResponse.json({ error: message }, { status });
   }
 }
