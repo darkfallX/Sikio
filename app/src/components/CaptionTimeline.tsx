@@ -26,13 +26,13 @@ export function CaptionTimeline({
   const fixedCount = words.filter((w) => w.fixedByHuman).length;
 
   return (
-    <div className="rounded-[14px] hairline bg-[var(--paper)] overflow-hidden">
-      <div className="px-5 py-3.5 hairline-b flex flex-wrap items-center justify-between gap-2">
-        <h2 className="type-label">Timed transcript</h2>
-        <div className="flex items-center gap-3 font-mono text-xs tabular-nums">
+    <div className="rounded-[12px] hairline bg-[var(--paper)] overflow-hidden">
+      <div className="px-5 py-3 hairline-b bg-[var(--bg)]/35 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="type-label">Galley proof transcript</h2>
+        <div className="flex items-center gap-2.5 font-mono text-[11px] tabular-nums">
           <span className="text-[var(--mute)]">{words.length} words</span>
           <span className="px-2 py-0.5 rounded-full bg-[var(--signal-bg)] text-[var(--signal-ink)] font-medium">
-            {flaggedCount} flagged
+            {flaggedCount} uncertain
           </span>
           <span className="px-2 py-0.5 rounded-full bg-[var(--green-bg)] text-[var(--green)] font-medium">
             {fixedCount} fixed
@@ -40,7 +40,7 @@ export function CaptionTimeline({
         </div>
       </div>
 
-      <div className="p-5 leading-[2.25] text-[16px] text-[var(--ink)] flex flex-wrap gap-x-1.5 gap-y-1.5">
+      <div className="px-5 py-6 sm:px-7 sm:py-7 text-[19px] sm:text-[21px] leading-[1.95] text-[var(--ink)] flex flex-wrap items-baseline gap-x-1.5 gap-y-1.5">
         {words
           .filter((w) => w.currentText.trim().length > 0)
           .map((w) => {
@@ -52,7 +52,7 @@ export function CaptionTimeline({
               "hover:bg-[var(--hover)] text-[var(--ink)] border-b-2 border-transparent";
             if (w.fixedByHuman) {
               tone =
-                "bg-[var(--green-bg)] text-[var(--green)] border-b-2 border-[var(--green)] font-semibold";
+                "sikio-verdict bg-[var(--green-bg)] text-[var(--green)] border-b-2 border-[var(--green)] font-semibold";
             } else if (linkedTask?.status === "submitted") {
               tone =
                 "bg-[var(--amber-bg)] text-[var(--amber)] border-b-2 border-[var(--amber)] font-semibold";
@@ -65,19 +65,23 @@ export function CaptionTimeline({
               tone += " ring-2 ring-[var(--ink)] ring-offset-1 ring-offset-[var(--paper)]";
             }
 
+            const titleText = w.fixedByHuman
+              ? `${w.start.toFixed(2)}s · Fixed: "${w.aiText}" → "${w.currentText}"`
+              : `${w.start.toFixed(2)}s · ${Math.round(w.confidence * 100)}%`;
+
             return (
               <button
                 key={w.index}
                 type="button"
                 onClick={() => onWordClick(w)}
-                title={`${w.start.toFixed(2)}s · ${Math.round(w.confidence * 100)}%`}
-                className={`px-1.5 py-0.5 rounded-[6px] transition-colors cursor-pointer ${tone}`}
+                title={titleText}
+                className={`px-1 py-0.5 rounded-[5px] transition-colors cursor-pointer ${tone}`}
               >
                 <span>{w.currentText}</span>
                 {w.flagged && !w.fixedByHuman && (
-                  <span className="ml-1 font-mono text-[10px] tabular-nums opacity-80">
+                  <sup className="ml-0.5 font-mono text-[10px] tabular-nums opacity-75">
                     {Math.round(w.confidence * 100)}%
-                  </span>
+                  </sup>
                 )}
               </button>
             );
