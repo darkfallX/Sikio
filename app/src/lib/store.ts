@@ -1,5 +1,4 @@
 import fs from "fs";
-import path from "path";
 import crypto from "crypto";
 import { keccak256, toHex } from "viem";
 import {
@@ -14,9 +13,7 @@ import {
 import { applyCorrectionToWords, buildFlaggedClusters } from "./captions";
 import { AEVUM_CONFIG } from "./aevum";
 import { SIKIO_TRANSCRIPTION_PROVIDER } from "./x402";
-
-const DATA_DIR = path.join(process.cwd(), "data");
-const STATE_FILE = path.join(DATA_DIR, "sikio-state.json");
+import { getStateFilePath, writeJsonAtomic } from "./storage";
 
 function makeSandboxTxHash(seed: string): `0x${string}` {
   const hash = crypto
@@ -66,56 +63,63 @@ function defaultState(): SikioState {
     ],
     agentRevoked: false,
     autoAcceptTrusted: false,
-    mode: AEVUM_CONFIG.reviewEscrowAddress ? "aevum-live" : "sandbox",
+    // Active browser sessions default to sandbox until a live Chain 44005 tx hash is submitted
+    mode: "sandbox",
     contractAddress: AEVUM_CONFIG.reviewEscrowAddress || undefined,
   };
 
-  const initialReceipt: PaymentReceipt = {
-    id: "rcpt-init-batch",
-    kind: "batch_funded",
-    batchId: 1,
-    amountTusd8: 2.0,
-    from: agencyAddress,
-    to: AEVUM_CONFIG.reviewEscrowAddress,
-    actorLabel: "Verified Live Aevum Batch #1 (createBatch)",
-    txHash:
-      "0x5e7cc05fa7d66b1ba76f6f0f64c634338ba6d285767a357ac1ca7289ff96c026",
-    mode: "aevum-live",
-    gasToken: "tQDAY",
-    note: "Live on-chain Batch #1 on ReviewEscrow (0x36Cf…5E6b) · max 0.50 tUSD8/task · 7d session expiry",
-    timestamp: new Date().toISOString(),
-  };
-
-  const liveProofReceipts: PaymentReceipt[] = [
+  // Active session ledger starts clean and reconciles 100% with batch header totals
+  const sessionReceipts: PaymentReceipt[] = [
     {
-      id: "rcpt-live-accept",
+      id: "rcpt-session-init",
+      kind: "batch_funded",
+      batchId: 1,
+      amountTusd8: 20.0,
+      from: agencyAddress,
+      to: AEVUM_CONFIG.reviewEscrowAddress,
+      actorLabel: "Session Cap Allocation → ReviewEscrow Sandbox",
+      txHash: makeSandboxTxHash("session-init"),
+      mode: "sandbox",
+      settlementState: "active",
+      gasToken: "sandbox",
+      note: "Active session budget cap (20.00 tUSD8 max · 0.50 max/task · 7d expiry)",
+      timestamp: new Date().toISOString(),
+    },
+  ];
+
+  // Genuine Nov 22, 2026 confirmed transactions on QDay Aevum Testnet (Chain 44005)
+  const verifiedOnChainProofs: PaymentReceipt[] = [
+    {
+      id: "proof-live-accept",
       kind: "editor_payout",
       batchId: 1,
       amountTusd8: 0.25,
       from: AEVUM_CONFIG.reviewEscrowAddress,
       to: "0x2281ff3819AbA842881267DbFecc0a3B7A672D69",
-      actorLabel: "Verified Live Payout -> Zero-Gas Editor (0 tQDAY)",
+      actorLabel: "Live acceptTask → Zero-gas Editor (0 tQDAY)",
       txHash:
         "0x71820bca063398666435fae1c7633f8ed779cff4df487b01c3a988cedf38b6eb",
       mode: "aevum-live",
+      settlementState: "settled",
       gasToken: "tUSD8 (sponsored)",
-      note: 'Relayed EIP-712 correction ("Pay stark" -> "Paystack") accepted & paid once on Aevum 44005',
-      timestamp: new Date().toISOString(),
+      note: 'Relayed EIP-712 correction ("Pay stark" → "Paystack") accepted & paid once on Aevum 44005',
+      timestamp: "2026-11-22T22:15:19Z",
     },
     {
-      id: "rcpt-live-x402",
+      id: "proof-live-x402",
       kind: "x402_inference",
       batchId: 1,
       amountTusd8: 0.04,
       from: agentAddress,
       to: SIKIO_TRANSCRIPTION_PROVIDER,
-      actorLabel: "Verified Live x402 AI Buy (payInference)",
+      actorLabel: "Live x402 AI Buy → payInference",
       txHash:
         "0xb47b9b577b76f7c697ec5927fc3684ba79758da90da7216597d9f5b79ee05bb0",
       mode: "aevum-live",
+      settlementState: "settled",
       gasToken: "tQDAY",
       note: "Settled 0.04 tUSD8 inside ReviewEscrow Batch #1 for word-level African speech ASR",
-      timestamp: new Date().toISOString(),
+      timestamp: "2026-11-22T22:14:42Z",
       x402Proof: {
         protocol: "x402",
         endpoint: "/api/transcribe (Sikio-operated)",
@@ -124,10 +128,25 @@ function defaultState(): SikioState {
         httpStatusRetry: 200,
       },
     },
-    initialReceipt,
+    {
+      id: "proof-live-batch",
+      kind: "batch_funded",
+      batchId: 1,
+      amountTusd8: 2.0,
+      from: agencyAddress,
+      to: AEVUM_CONFIG.reviewEscrowAddress,
+      actorLabel: "Live createBatch → ReviewEscrow Batch #1",
+      txHash:
+        "0x5e7cc05fa7d66b1ba76f6f0f64c634338ba6d285767a357ac1ca7289ff96c026",
+      mode: "aevum-live",
+      settlementState: "settled",
+      gasToken: "tQDAY",
+      note: "Funded 2.00 tUSD8 on QDay Aevum 44005 (0x36Cf…5E6b) · max 0.50 tUSD8/task",
+      timestamp: "2026-11-22T22:14:08Z",
+    },
   ];
 
-  // Transparent pilot A/B benchmark runs (explicitly including overconfident-AI misses!)
+  // Transparent pilot A/B benchmark runs (including overconfident AI misses)
   const benchmarks: BenchmarkRun[] = [
     {
       id: "bench-lagos-01",
@@ -180,20 +199,33 @@ function defaultState(): SikioState {
     batch,
     jobs: [],
     tasks: [],
-    receipts: liveProofReceipts,
+    receipts: sessionReceipts,
+    verifiedOnChainProofs,
     benchmarks,
   };
 }
 
 export function readState(): SikioState {
+  const stateFile = getStateFilePath();
   try {
-    if (!fs.existsSync(STATE_FILE)) {
+    if (!fs.existsSync(stateFile)) {
       const fresh = defaultState();
       writeState(fresh);
       return fresh;
     }
-    const raw = fs.readFileSync(STATE_FILE, "utf8");
-    return JSON.parse(raw) as SikioState;
+    const raw = fs.readFileSync(stateFile, "utf8");
+    const parsed = JSON.parse(raw) as SikioState;
+    // Migrate legacy state shapes cleanly
+    if (
+      !parsed ||
+      !Array.isArray(parsed.verifiedOnChainProofs) ||
+      parsed.receipts.some((r) => r.actorLabel.includes("->"))
+    ) {
+      const fresh = defaultState();
+      writeState(fresh);
+      return fresh;
+    }
+    return parsed;
   } catch {
     const fresh = defaultState();
     writeState(fresh);
@@ -202,8 +234,7 @@ export function readState(): SikioState {
 }
 
 export function writeState(state: SikioState): void {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), "utf8");
+  writeJsonAtomic(getStateFilePath(), state);
 }
 
 export function resetState(): SikioState {
@@ -227,11 +258,20 @@ export function updateBatchPolicy(patch: {
 }): SikioState {
   const state = readState();
   const b = state.batch;
-  if (typeof patch.maxBudgetTusd8 === "number" && patch.maxBudgetTusd8 >= b.spentTusd8 + b.reservedTusd8) {
+  if (
+    typeof patch.maxBudgetTusd8 === "number" &&
+    Number.isFinite(patch.maxBudgetTusd8) &&
+    patch.maxBudgetTusd8 >= b.spentTusd8 + b.reservedTusd8
+  ) {
     b.maxBudgetTusd8 = Number(patch.maxBudgetTusd8.toFixed(2));
     b.fundedTusd8 = Number(patch.maxBudgetTusd8.toFixed(2));
   }
-  if (typeof patch.maxTaskFeeTusd8 === "number" && patch.maxTaskFeeTusd8 > 0 && patch.maxTaskFeeTusd8 <= b.maxBudgetTusd8) {
+  if (
+    typeof patch.maxTaskFeeTusd8 === "number" &&
+    Number.isFinite(patch.maxTaskFeeTusd8) &&
+    patch.maxTaskFeeTusd8 > 0 &&
+    patch.maxTaskFeeTusd8 <= b.maxBudgetTusd8
+  ) {
     b.maxTaskFeeTusd8 = Number(patch.maxTaskFeeTusd8.toFixed(2));
   }
   if (typeof patch.autoAcceptTrusted === "boolean") {
@@ -240,7 +280,7 @@ export function updateBatchPolicy(patch: {
   if (typeof patch.agentRevoked === "boolean") {
     b.agentRevoked = patch.agentRevoked;
   }
-  if (patch.agencyAddress) {
+  if (patch.agencyAddress && /^0x[0-9a-fA-F]{40}$/.test(patch.agencyAddress)) {
     b.agencyAddress = patch.agencyAddress;
     b.approverAddress = patch.agencyAddress;
   }
@@ -276,7 +316,10 @@ export function createJobAndReserveTasks(params: {
   const state = readState();
   const b = state.batch;
   const nowSec = Math.floor(Date.now() / 1000);
-  const mode: ExecutionMode = params.mode || b.mode;
+
+  // Honesty invariant: only real confirmed tx hashes may carry "aevum-live"
+  const x402Mode: ExecutionMode =
+    params.x402TxHash && params.mode === "aevum-live" ? "aevum-live" : "sandbox";
 
   if (b.agentRevoked) {
     throw new Error("Agent session has been revoked by the agency.");
@@ -319,11 +362,12 @@ export function createJobAndReserveTasks(params: {
     amountTusd8: params.inferenceCostTusd8,
     from: b.agentAddress,
     to: SIKIO_TRANSCRIPTION_PROVIDER,
-    actorLabel: "Sikio Agent -> Sikio x402 ASR",
+    actorLabel: "Sikio Agent → Sikio x402 ASR",
     txHash: x402TxHash,
-    mode,
-    gasToken: mode === "aevum-live" ? "tQDAY" : "sandbox",
-    note: `HTTP 402 -> Paid ${params.inferenceCostTusd8.toFixed(2)} tUSD8 -> 200 OK (${params.words.length} timed words)`,
+    mode: x402Mode,
+    settlementState: "settled",
+    gasToken: x402Mode === "aevum-live" ? "tQDAY" : "sandbox",
+    note: `HTTP 402 → Paid ${params.inferenceCostTusd8.toFixed(2)} tUSD8 → 200 OK (${params.words.length} timed words)`,
     timestamp: new Date().toISOString(),
     x402Proof: {
       protocol: "x402",
@@ -334,7 +378,6 @@ export function createJobAndReserveTasks(params: {
     },
   });
 
-  // Pick matched trusted editor by city/language
   const editor =
     b.trustedEditors.find(
       (e) =>
@@ -342,7 +385,7 @@ export function createJobAndReserveTasks(params: {
         e.city.toLowerCase() === params.preferredCity.toLowerCase()
     ) || b.trustedEditors[0];
 
-  // 2. Reserve escrow fee for each low-confidence passage
+  // 2. Reserve escrow fee for each low-confidence passage (sandbox lock unless submitted live)
   const createdTasks: ReviewTask[] = [];
   const wordsCopy = params.words.map((w) => ({
     ...w,
@@ -356,6 +399,7 @@ export function createJobAndReserveTasks(params: {
       toHex(`${params.clipId}:${cluster.excerptStart}-${cluster.excerptEnd}`)
     );
     const offerTxHash = makeSandboxTxHash(`offer:${taskId}`);
+    const offerMode: ExecutionMode = "sandbox";
 
     b.reservedTusd8 = Number((b.reservedTusd8 + params.feePerTaskTusd8).toFixed(6));
 
@@ -384,7 +428,7 @@ export function createJobAndReserveTasks(params: {
       expiryTimestamp: Math.min(b.expiryTimestamp, nowSec + 48 * 3600),
       excerptHash,
       offerTxHash,
-      gasMode: mode === "aevum-live" ? "zero-gas-relayed" : "sandbox",
+      gasMode: "sandbox",
     };
 
     for (const wIdx of cluster.wordIndices) {
@@ -406,10 +450,11 @@ export function createJobAndReserveTasks(params: {
       from: b.agentAddress,
       to: (b.contractAddress ||
         "0xE5C0000000000000000000000000000000004405") as `0x${string}`,
-      actorLabel: `Escrow Lock -> ${editor.name} (${editor.city})`,
+      actorLabel: `Escrow Lock → ${editor.name} (${editor.city})`,
       txHash: offerTxHash,
-      mode,
-      gasToken: mode === "aevum-live" ? "tQDAY" : "sandbox",
+      mode: offerMode,
+      settlementState: "active",
+      gasToken: "sandbox",
       note: `Reserved for ${cluster.excerptStart.toFixed(1)}s to ${cluster.excerptEnd.toFixed(1)}s ("${cluster.aiGuess}")`,
       timestamp: new Date().toISOString(),
     });
@@ -442,7 +487,7 @@ export function createJobAndReserveTasks(params: {
 
 /**
  * Editor submits correction from mobile Ear view (zero gas required).
- * If agency enabled `autoAcceptTrusted`, settles immediately via acceptTask.
+ * If agency enabled `autoAcceptTrusted`, settles immediately via acceptReviewTask.
  */
 export function submitEditorCorrection(params: {
   taskId: string;
@@ -488,8 +533,25 @@ export function submitEditorCorrection(params: {
   return { state, task };
 }
 
+function assertAuthorizedApprover(
+  state: SikioState,
+  approverAddress?: `0x${string}`
+): `0x${string}` {
+  if (!approverAddress) return state.batch.approverAddress;
+  const candidate = approverAddress.toLowerCase();
+  if (
+    candidate !== state.batch.approverAddress.toLowerCase() &&
+    candidate !== state.batch.agencyAddress.toLowerCase()
+  ) {
+    throw new Error(
+      "UNAUTHORIZED: Only batch.approver or batch.agency can authorize settlement or refunds."
+    );
+  }
+  return approverAddress;
+}
+
 /**
- * Named approver accepts correction -> pays editor EXACTLY ONCE in tUSD8 and merges caption fix.
+ * Named approver accepts a submitted correction -> pays editor EXACTLY ONCE in tUSD8 and merges caption fix.
  */
 export function acceptReviewTask(params: {
   taskId: string;
@@ -499,15 +561,19 @@ export function acceptReviewTask(params: {
   mode?: ExecutionMode;
 }): { state: SikioState; task: ReviewTask } {
   const state = readState();
+  const approver = assertAuthorizedApprover(state, params.approverAddress);
+
   const task = state.tasks.find((t) => t.id === params.taskId);
   if (!task) throw new Error("Task not found.");
 
-  // Exact-once settlement invariant!
+  // Exact-once settlement invariant
   if (task.status === "accepted") {
     throw new Error("Task already settled: ReviewEscrow pays each taskId at most once.");
   }
-  if (task.status !== "offered" && task.status !== "submitted") {
-    throw new Error(`Cannot accept task in status "${task.status}".`);
+  if (task.status !== "submitted") {
+    throw new Error(
+      `Task must be submitted by an editor before approval (current status: "${task.status}").`
+    );
   }
 
   const nowSec = Math.floor(Date.now() / 1000);
@@ -515,14 +581,15 @@ export function acceptReviewTask(params: {
     throw new Error("Cannot accept an expired task.");
   }
 
-  const approver = params.approverAddress || state.batch.approverAddress;
-  const mode = params.mode || state.batch.mode;
+  const effectiveMode: ExecutionMode =
+    params.txHash && params.mode === "aevum-live" ? "aevum-live" : "sandbox";
   const settleTxHash = params.txHash || makeSandboxTxHash(`accept:${task.id}`);
 
   task.status = "accepted";
   task.approvedBy = approver;
   task.approvedAt = new Date().toISOString();
   task.settleTxHash = settleTxHash;
+  task.settleMode = effectiveMode;
 
   state.batch.reservedTusd8 = Number(
     Math.max(0, state.batch.reservedTusd8 - task.feeTusd8).toFixed(6)
@@ -530,6 +597,13 @@ export function acceptReviewTask(params: {
   state.batch.spentTusd8 = Number(
     (state.batch.spentTusd8 + task.feeTusd8).toFixed(6)
   );
+
+  // Reconcile the original Escrow Lock row so active ledger matches header totals
+  for (const r of state.receipts) {
+    if (r.taskId === task.id && r.kind === "task_reserved") {
+      r.settlementState = "settled";
+    }
+  }
 
   // Merge correction directly into the job's timed captions
   const job = state.jobs.find((j) => j.id === task.jobId);
@@ -548,13 +622,14 @@ export function acceptReviewTask(params: {
     from: (state.batch.contractAddress ||
       "0xE5C0000000000000000000000000000000004405") as `0x${string}`,
     to: task.editorAddress,
-    actorLabel: `Paid Once -> ${task.editorName} (${task.editorCity})`,
+    actorLabel: `Paid Once → ${task.editorName} (${task.editorCity})`,
     txHash: settleTxHash,
-    mode,
-    gasToken: mode === "aevum-live" ? "tUSD8 (sponsored)" : "sandbox",
+    mode: effectiveMode,
+    settlementState: "settled",
+    gasToken: effectiveMode === "aevum-live" ? "tUSD8 (sponsored)" : "sandbox",
     note:
       params.note ||
-      `"${task.aiGuess}" -> "${task.submittedText || task.aiGuess}" · Approved by ${approver.slice(0, 8)}…`,
+      `"${task.aiGuess}" → "${task.submittedText || task.aiGuess}" · Approved by ${approver.slice(0, 8)}…`,
     timestamp: new Date().toISOString(),
   });
 
@@ -570,25 +645,39 @@ export function rejectOrExpireTask(params: {
   action: "reject" | "expire";
   reason?: string;
   approverAddress?: `0x${string}`;
+  txHash?: `0x${string}`;
+  mode?: ExecutionMode;
 }): { state: SikioState; task: ReviewTask } {
   const state = readState();
+  assertAuthorizedApprover(state, params.approverAddress);
+
   const task = state.tasks.find((t) => t.id === params.taskId);
   if (!task) throw new Error("Task not found.");
   if (task.status !== "offered" && task.status !== "submitted") {
     throw new Error(`Cannot ${params.action} task in status "${task.status}".`);
   }
 
-  const mode = state.batch.mode;
-  const txHash = makeSandboxTxHash(`${params.action}:${task.id}`);
+  const effectiveMode: ExecutionMode =
+    params.txHash && params.mode === "aevum-live" ? "aevum-live" : "sandbox";
+  const txHash = params.txHash || makeSandboxTxHash(`${params.action}:${task.id}`);
   task.status = params.action === "reject" ? "rejected" : "expired";
   task.rejectionReason =
     params.reason ||
-    (params.action === "expire" ? "Task expired before approval" : "Rejected by agency approver");
+    (params.action === "expire"
+      ? "Task expired before approval"
+      : "Rejected by agency approver");
   task.settleTxHash = txHash;
+  task.settleMode = effectiveMode;
 
   state.batch.reservedTusd8 = Number(
     Math.max(0, state.batch.reservedTusd8 - task.feeTusd8).toFixed(6)
   );
+
+  for (const r of state.receipts) {
+    if (r.taskId === task.id && r.kind === "task_reserved") {
+      r.settlementState = "refunded";
+    }
+  }
 
   state.receipts.unshift({
     id: `rcpt-ref-${task.id}`,
@@ -602,11 +691,12 @@ export function rejectOrExpireTask(params: {
     to: state.batch.agencyAddress,
     actorLabel:
       params.action === "expire"
-        ? "Expired Task Refund -> Batch Budget"
-        : "Rejected Task Refund -> Batch Budget",
+        ? "Expired Task Refund → Batch Budget"
+        : "Rejected Task Refund → Batch Budget",
     txHash,
-    mode,
-    gasToken: mode === "aevum-live" ? "tQDAY" : "sandbox",
+    mode: effectiveMode,
+    settlementState: "refunded",
+    gasToken: effectiveMode === "aevum-live" ? "tQDAY" : "sandbox",
     note: `${task.rejectionReason} · Returned ${task.feeTusd8.toFixed(2)} tUSD8 to available cap`,
     timestamp: new Date().toISOString(),
   });
@@ -615,7 +705,9 @@ export function rejectOrExpireTask(params: {
   return { state, task };
 }
 
-export function addBenchmarkRun(run: Omit<BenchmarkRun, "id" | "recordedAt" | "source">): SikioState {
+export function addBenchmarkRun(
+  run: Omit<BenchmarkRun, "id" | "recordedAt" | "source">
+): SikioState {
   const state = readState();
   state.benchmarks.unshift({
     ...run,
