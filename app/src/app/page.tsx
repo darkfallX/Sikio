@@ -2,7 +2,16 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Download, Upload, ArrowRight, Play, RefreshCw, Check } from "lucide-react";
+import {
+  Download,
+  Upload,
+  ArrowRight,
+  Play,
+  RefreshCw,
+  Check,
+  ExternalLink,
+  Headphones,
+} from "lucide-react";
 import {
   BatchBudget,
   CaptionJob,
@@ -12,11 +21,12 @@ import {
 } from "@/lib/types";
 import { computeCostMetrics } from "@/lib/captions";
 import { SIKIO_TRANSCRIPTION_PROVIDER } from "@/lib/x402";
+import { explorerTxUrl, shortAddr, shortHash } from "@/lib/aevum";
 import { WaveformPlayer } from "@/components/WaveformPlayer";
 import { CaptionTimeline } from "@/components/CaptionTimeline";
 import { BudgetRail } from "@/components/BudgetRail";
-import { OrganicWaveRibbon, WaveSpan } from "@/components/OrganicWaveRibbon";
 import { useWallet } from "@/components/WalletContext";
+import { Button, buttonClass, ModeTag } from "@/components/ui";
 
 interface ShowcaseClipOption {
   id: string;
@@ -38,64 +48,58 @@ interface StatePayload {
   showcaseClips: ShowcaseClipOption[];
 }
 
-interface ProofPreviewSlide {
-  clipId: string;
-  city: string;
-  lang: string;
-  duration: number;
-  before: string;
-  after: string;
-  pairs: [string, string, number, number, number][]; // [wrong, right, start, end, conf%]
-}
-
-const PREVIEW_SLIDES: ProofPreviewSlide[] = [
-  {
-    clipId: "lagos-fintech-ep14",
-    city: "Lagos",
-    lang: "en-NG / pcm",
-    duration: 17.4,
-    before: "Today we are talking with Tunde from Yaba about how founders use",
-    after: "and Flutterwave to settle Naira payouts without wahala.",
-    pairs: [
-      ["Pay stark", "Paystack", 6.2, 7.6, 48],
-      ["wall holler", "wahala", 9.3, 11.4, 41],
-      ["down for", "danfo", 11.3, 12.6, 52],
-    ],
-  },
-  {
-    clipId: "nairobi-matatu-doc",
-    city: "Nairobi",
-    lang: "en-KE / sw",
-    duration: 14.4,
-    before: "Every morning at six, commuters along Ngong Road board the",
-    after: "heading toward Kilimani and Westlands.",
-    pairs: [
-      ["my tattoo", "matatu", 3.4, 4.9, 38],
-      ["Killy Manny", "Kilimani", 4.7, 6.2, 56],
-      ["one anchi", "mwananchi", 11.8, 13.4, 34],
-    ],
-  },
-  {
-    clipId: "accra-nollywood-scene",
-    city: "Accra",
-    lang: "en-GH",
-    duration: 12.5,
-    before: "Listen Kwame, the client in Osu needs the final cut. If we delay the",
-    after: "campaign for Makola Market, the agency moves budget.",
-    pairs: [
-      ["jaw love", "jollof", 5.8, 7.4, 42],
-      ["Quarry", "Kwame", 0.3, 1.8, 46],
-      ["McCullough", "Makola", 7.1, 8.8, 47],
-    ],
-  },
-];
-
 const PIPELINE_STEPS = [
-  "HTTP 402 payment challenge",
-  "Settling 0.04 tUSD8 x402",
-  "Flagging uncertain African speech spans",
-  "Locking escrow for native Ear review",
+  "Asking for the transcript",
+  "Paying 0.04 tUSD8 over x402",
+  "Finding words the AI is unsure of",
+  "Holding fees for native speakers",
 ];
+
+type ColumnKey = "offered" | "submitted" | "accepted" | "returned";
+
+const COLUMNS: {
+  key: ColumnKey;
+  title: string;
+  tone: string;
+  empty: string;
+  explain: string;
+}[] = [
+  {
+    key: "offered",
+    title: "Needs an ear",
+    tone: "text-[var(--signal)]",
+    empty: "No unsure words. The AI was confident on every word above the floor.",
+    explain: "Words the AI is unsure of wait here for a native speaker in Ear.",
+  },
+  {
+    key: "submitted",
+    title: "Heard",
+    tone: "text-[var(--heard)]",
+    empty: "When a native speaker answers in Ear, their fix waits here for the approver.",
+    explain: "The native speaker's answer waits here for the agency's approver.",
+  },
+  {
+    key: "accepted",
+    title: "Paid once",
+    tone: "text-[var(--green)]",
+    empty: "Approved fixes are paid exactly once and merged into the captions.",
+    explain: "Approved fixes are paid exactly once and merged into the captions.",
+  },
+  {
+    key: "returned",
+    title: "Returned",
+    tone: "text-[var(--mute)]",
+    empty: "Rejected or expired fees go back to the budget.",
+    explain: "Rejected or expired fees go back to the budget.",
+  },
+];
+
+function columnOf(t: ReviewTask): ColumnKey {
+  if (t.status === "offered") return "offered";
+  if (t.status === "submitted") return "submitted";
+  if (t.status === "accepted") return "accepted";
+  return "returned";
+}
 
 function notifyNavSync() {
   if (typeof window !== "undefined") {
@@ -104,15 +108,24 @@ function notifyNavSync() {
 }
 
 export default function StudioPage() {
-  const { address, isAevum, liveEscrowMode, payInferenceOnChain } = useWallet();
+  const {
+    address,
+    isAevum,
+    liveEscrowMode,
+    payInferenceOnChain,
+    acceptTaskOnChain,
+  } = useWallet();
   const [data, setData] = useState<StatePayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [running, setRunning] = useState(false);
   const [pipelineStep, setPipelineStep] = useState<number>(-1);
   const [uploading, setUploading] = useState(false);
   const [policyBusy, setPolicyBusy] = useState(false);
+  const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [boardMsg, setBoardMsg] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
 
   const [selectedClipId, setSelectedClipId] = useState("lagos-fintech-ep14");
   const [threshold, setThreshold] = useState(0.78);
@@ -121,7 +134,6 @@ export default function StudioPage() {
   const [seekToTime, setSeekToTime] = useState<number | null>(null);
   const [playheadTime, setPlayheadTime] = useState(0);
 
-  // Uploaded persistent clip state
   const [customClipId, setCustomClipId] = useState<string | null>(null);
   const [customAudioUrl, setCustomAudioUrl] = useState<string | null>(null);
   const [customFileName, setCustomFileName] = useState<string | null>(null);
@@ -133,16 +145,16 @@ export default function StudioPage() {
     operator: string;
   } | null>(null);
 
-  // Living pre-run proof preview animation state
-  const [previewFixed, setPreviewFixed] = useState(false);
-  const [previewSlideIdx, setPreviewSlideIdx] = useState(0);
   const stepTimerRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const playerRef = useRef<HTMLDivElement | null>(null);
 
   const loadState = useCallback(async () => {
     try {
       const res = await fetch("/api/state", { cache: "no-store" });
+      if (!res.ok) throw new Error("state");
       const json = (await res.json()) as StatePayload;
       setData(json);
+      setLoadFailed(false);
       if (json.jobs.length > 0) {
         setActiveJobId((prev) =>
           prev && json.jobs.some((j) => j.id === prev) ? prev : json.jobs[0].id
@@ -152,7 +164,7 @@ export default function StudioPage() {
       }
       notifyNavSync();
     } catch {
-      setError("Could not reach Sikio backend.");
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -162,37 +174,6 @@ export default function StudioPage() {
     loadState();
   }, [loadState]);
 
-  // Sync preview slide with user's selected showcase clip or cycle gently when idle
-  useEffect(() => {
-    const idx = PREVIEW_SLIDES.findIndex((s) => s.clipId === selectedClipId);
-    if (idx >= 0) {
-      setPreviewSlideIdx(idx);
-      setPreviewFixed(false);
-    }
-  }, [selectedClipId]);
-
-  useEffect(() => {
-    if (activeJobId) return;
-    if (
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    ) {
-      setPreviewFixed(true);
-      return;
-    }
-
-    const fixTimer = setTimeout(() => setPreviewFixed(true), 2200);
-    const nextTimer = setTimeout(() => {
-      setPreviewFixed(false);
-      setPreviewSlideIdx((i) => (i + 1) % PREVIEW_SLIDES.length);
-    }, 6400);
-
-    return () => {
-      clearTimeout(fixTimer);
-      clearTimeout(nextTimer);
-    };
-  }, [activeJobId, previewSlideIdx]);
-
   const activeJob = useMemo(() => {
     if (!data || data.jobs.length === 0) return null;
     return data.jobs.find((j) => j.id === activeJobId) || data.jobs[0];
@@ -200,7 +181,9 @@ export default function StudioPage() {
 
   const activeJobTasks = useMemo(() => {
     if (!data || !activeJob) return [];
-    return data.tasks.filter((t) => t.jobId === activeJob.id);
+    return data.tasks
+      .filter((t) => t.jobId === activeJob.id)
+      .sort((a, b) => a.focusStart - b.focusStart);
   }, [data, activeJob]);
 
   const costMetrics = useMemo(() => {
@@ -239,7 +222,7 @@ export default function StudioPage() {
         wavDurationSeconds?: number | null;
       };
       if (!res.ok || !json.clipId || !json.audioUrl) {
-        setError(json.error || "Could not upload audio clip.");
+        setError(json.error || "Could not upload that file. Try a WAV or MP3 under 12 MB.");
         return;
       }
 
@@ -260,7 +243,7 @@ export default function StudioPage() {
         };
       }
     } catch {
-      setError("Network error while uploading audio file.");
+      setError("The upload did not reach the server. Check your connection and try again.");
     } finally {
       setUploading(false);
     }
@@ -281,7 +264,7 @@ export default function StudioPage() {
     try {
       const isCustom = selectedClipId === "custom-upload";
       if (isCustom && !customClipId) {
-        setError("Select or upload an audio file before running the agent.");
+        setError("Upload an audio file first, or pick one of the sample clips.");
         return;
       }
 
@@ -334,20 +317,21 @@ export default function StudioPage() {
 
       const json = await res.json();
       if (!res.ok) {
-        setError(json.error || "Agent run rejected by budget policy.");
+        setError(json.error || "The agent's rules blocked this run.");
         return;
       }
 
       await loadState();
       if (json.job?.id) setActiveJobId(json.job.id);
+      const n = json.createdTasks.length as number;
       setNotice(
-        `x402 settled 0.04 tUSD8. Flagged ${json.createdTasks.length} spans and escrowed ${(
-          json.createdTasks.length * feePerTask
-        ).toFixed(2)} tUSD8.`
+        `Paid 0.04 tUSD8 for the transcript. Found ${n} unsure ${
+          n === 1 ? "word" : "words"
+        } and is holding ${(n * feePerTask).toFixed(2)} tUSD8 for native speakers.`
       );
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Network error while running agent."
+        err instanceof Error ? err.message : "The agent could not reach the server."
       );
     } finally {
       stepTimerRef.current.forEach(clearTimeout);
@@ -371,7 +355,7 @@ export default function StudioPage() {
         body: JSON.stringify({ action: "update_policy", ...patch }),
       });
       const json = await res.json();
-      if (!res.ok) setError(json.error || "Could not update policy.");
+      if (!res.ok) setError(json.error || "Could not update the agent rules.");
       else await loadState();
     } finally {
       setPolicyBusy(false);
@@ -395,638 +379,707 @@ export default function StudioPage() {
     }
   };
 
-  const handleWordClick = (w: CaptionWord) => {
-    setSeekToTime(Math.max(0, w.start - 0.15));
+  // Approver actions, same rules as /approve (server verifies approver identity)
+  const handleTaskAction = async (
+    task: ReviewTask,
+    action: "accept" | "reject" | "expire"
+  ) => {
+    setBoardMsg(null);
+    setBusyTaskId(task.id);
+    try {
+      let txHash: `0x${string}` | undefined;
+      let runMode: "aevum-live" | "sandbox" = "sandbox";
+      if (action === "accept" && liveEscrowMode && address && isAevum) {
+        txHash = await acceptTaskOnChain(task.taskIdBytes32);
+        runMode = "aevum-live";
+      }
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          taskId: task.id,
+          approverAddress: address || data?.batch.approverAddress,
+          txHash,
+          mode: runMode,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setBoardMsg({ tone: "error", text: json.error || "That action was not allowed." });
+        return;
+      }
+      await loadState();
+      setBoardMsg({
+        tone: "ok",
+        text:
+        action === "accept"
+          ? `Paid ${task.feeTusd8.toFixed(2)} tUSD8 once to ${task.editorName}. "${
+              task.submittedText || task.aiGuess
+            }" is now in the captions.`
+          : `Returned ${task.feeTusd8.toFixed(2)} tUSD8 to the budget.`,
+      });
+    } catch (err) {
+      setBoardMsg({ tone: "error", text: err instanceof Error ? err.message : "That action failed." });
+    } finally {
+      setBusyTaskId(null);
+    }
   };
 
-  if (loading || !data) {
+  const seekTo = (sec: number) => {
+    setSeekToTime(Math.max(0, sec));
+    playerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  };
+
+  const handleWordClick = (w: CaptionWord) => seekTo(w.start - 0.15);
+
+  if (loading) {
     return (
-      <div className="space-y-6">
-        <div className="h-14 w-3/4 rounded-[12px] bg-[var(--panel)] animate-pulse" />
-        <div className="h-72 w-full rounded-[12px] bg-[var(--panel)] animate-pulse" />
+      <div className="space-y-5" aria-busy="true" aria-label="Loading the studio">
+        <div className="h-10 w-2/3 max-w-xl rounded-[var(--r)] bg-[var(--panel)] animate-pulse" />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="h-20 rounded-[var(--r)] bg-[var(--panel)] animate-pulse" />
+          ))}
+        </div>
+        <div className="h-64 rounded-[var(--r)] bg-[var(--panel)] animate-pulse" />
       </div>
     );
   }
 
-  const pendingSubmitCount = data.tasks.filter((t) => t.status === "offered").length;
-  const pendingApproveCount = data.tasks.filter((t) => t.status === "submitted").length;
-  const activePreview = PREVIEW_SLIDES[previewSlideIdx] || PREVIEW_SLIDES[0];
+  if (loadFailed || !data) {
+    return (
+      <div className="max-w-lg rounded-[var(--r)] hairline bg-[var(--paper)] p-6 space-y-3">
+        <h1 className="type-section">The studio could not load</h1>
+        <p className="text-[15px] text-[var(--ink-2)]">
+          The Sikio server did not answer. Check that it is running, then try again.
+        </p>
+        <Button variant="primary" onClick={() => { setLoading(true); loadState(); }}>
+          <RefreshCw className="w-4 h-4" /> Try again
+        </Button>
+      </div>
+    );
+  }
 
-  const previewWaveSpans: WaveSpan[] = activePreview.pairs.map((p) => ({
-    start: p[2],
-    end: p[3],
-    status: previewFixed ? "accepted" : "flagged",
-  }));
+  const batch = data.batch;
+  const spentPct = Math.min(100, (batch.spentTusd8 / Math.max(batch.maxBudgetTusd8, 0.01)) * 100);
+  const reservedPct = Math.min(
+    100 - spentPct,
+    (batch.reservedTusd8 / Math.max(batch.maxBudgetTusd8, 0.01)) * 100
+  );
+
+  const grouped: Record<ColumnKey, ReviewTask[]> = {
+    offered: [],
+    submitted: [],
+    accepted: [],
+    returned: [],
+  };
+  for (const t of activeJobTasks) grouped[columnOf(t)].push(t);
 
   return (
-    <div className="space-y-7 sm:space-y-9">
-      {/* Masthead + balanced single intake strip */}
-      <section className="space-y-5 sikio-rise">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-          <div className="space-y-2 max-w-2xl">
-            <h1 className="type-display text-[var(--ink)]">
-              AI captions for <em className="italic font-semibold">African voices</em>.
-            </h1>
-            <p className="text-[16px] text-[var(--ink-2)]">
-              Read captions like a proof sheet. Native ears fix only underlined spans, paid once in tUSD8.
-            </p>
-          </div>
+    <div className="space-y-6 sm:space-y-7">
+      {/* Page head */}
+      <section className="flex flex-col md:flex-row md:items-end justify-between gap-4 sikio-rise">
+        <div className="space-y-1.5 max-w-2xl">
+          <h1 className="type-page text-[var(--ink)]">Captions for African voices</h1>
+          <p className="text-[16px] text-[var(--ink-2)]">
+            When the AI is unsure of a word, Sikio asks a native speaker to hear just
+            those seconds, then pays them once.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {activeJob && (
+            <>
+              <a
+                href={`/api/jobs/${activeJob.id}/export?format=srt`}
+                className={buttonClass("secondary", "sm")}
+              >
+                <Download className="w-4 h-4" /> .srt
+              </a>
+              <a
+                href={`/api/jobs/${activeJob.id}/export?format=vtt`}
+                className={buttonClass("secondary", "sm")}
+              >
+                <Download className="w-4 h-4" /> .vtt
+              </a>
+            </>
+          )}
+          <Button variant="ghost" size="sm" disabled={policyBusy} onClick={handleResetDemo}>
+            <RefreshCw className="w-4 h-4" /> Reset demo
+          </Button>
+        </div>
+      </section>
 
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            {activeJob && (
-              <>
-                <a
-                  href={`/api/jobs/${activeJob.id}/export?format=srt`}
-                  className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3.5 rounded-[8px] text-xs font-semibold hairline bg-[var(--paper)] text-[var(--ink)] hover:bg-[var(--hover)]"
-                >
-                  <Download className="w-3.5 h-3.5" /> Export .srt
-                </a>
-                <a
-                  href={`/api/jobs/${activeJob.id}/export?format=vtt`}
-                  className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3.5 rounded-[8px] text-xs font-semibold hairline bg-[var(--paper)] text-[var(--ink)] hover:bg-[var(--hover)]"
-                >
-                  <Download className="w-3.5 h-3.5" /> Export .vtt
-                </a>
-              </>
-            )}
-            <button
-              type="button"
-              disabled={policyBusy}
-              onClick={handleResetDemo}
-              className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3.5 rounded-[8px] text-xs font-medium hairline bg-[var(--paper)] text-[var(--mute)] hover:text-[var(--ink)] cursor-pointer"
-            >
-              <RefreshCw className="w-3.5 h-3.5" /> Reset
-            </button>
+      {/* Money strip */}
+      <section
+        aria-label="Budget"
+        className="grid grid-cols-2 lg:grid-cols-4 gap-px rounded-[var(--r)] hairline bg-[var(--line)] overflow-hidden [&>*]:min-w-0 [&>*]:bg-[var(--paper)] sikio-rise"
+        style={{ ["--i" as string]: 1 }}
+      >
+        <div className="p-4 sm:p-5 space-y-2">
+          <div className="text-[13px] text-[var(--mute)]">Budget left</div>
+          <div className="text-2xl sm:text-[28px] font-extrabold tabular-nums tracking-[-0.02em]">
+            {data.availableBudgetTusd8.toFixed(2)}
+            <span className="ml-1.5 text-[13px] font-medium text-[var(--mute)] tracking-normal">
+              of {batch.maxBudgetTusd8.toFixed(2)}
+            </span>
+          </div>
+          <div className="h-1.5 rounded-full bg-[var(--panel)] overflow-hidden flex" aria-hidden="true">
+            <div style={{ width: `${spentPct}%` }} className="h-full bg-[var(--green)] sikio-bar-fill" />
+            <div style={{ width: `${reservedPct}%` }} className="h-full bg-[var(--signal)] sikio-bar-fill" />
           </div>
         </div>
-
-        {/* Shared-border studio intake strip: fits cleanly on one line on desktop */}
-        <div className="rounded-[12px] hairline bg-[var(--paper)] overflow-hidden">
-          <div className="grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-[var(--line)]">
-            <div className="lg:col-span-6 p-3.5 sm:p-4 space-y-2">
-              <div className="type-label">Clip source</div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {data.showcaseClips.map((c) => {
-                  const active = selectedClipId === c.id;
-                  return (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => setSelectedClipId(c.id)}
-                      className={`min-h-[44px] sm:min-h-[36px] px-3 rounded-[8px] text-xs font-medium hairline transition-colors cursor-pointer whitespace-nowrap ${
-                        active
-                          ? "bg-[var(--ink)] text-[var(--paper)]"
-                          : "bg-[var(--bg)] text-[var(--ink)] hover:bg-[var(--hover)]"
-                      }`}
-                    >
-                      {c.shortLabel || `${c.city} · ${c.languageTag}`}
-                    </button>
-                  );
-                })}
-                <label
-                  className={`min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-3 rounded-[8px] text-xs font-medium hairline cursor-pointer transition-colors whitespace-nowrap ${
-                    selectedClipId === "custom-upload"
-                      ? "bg-[var(--ink)] text-[var(--paper)]"
-                      : "bg-[var(--paper)] text-[var(--mute)] hover:text-[var(--ink)]"
-                  }`}
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  {uploading
-                    ? "Uploading…"
-                    : customFileName
-                    ? customFileName.slice(0, 12)
-                    : "Upload"}
-                  <input
-                    type="file"
-                    accept="audio/*,video/*"
-                    disabled={uploading}
-                    onChange={handleFileUpload}
-                    className="sr-only"
-                  />
-                </label>
-              </div>
-            </div>
-
-            <div className="lg:col-span-2 p-3.5 sm:p-4 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <label htmlFor="conf-slider" className="type-label">
-                  Floor
-                </label>
-                <span className="font-mono text-xs font-semibold tabular-nums text-[var(--ink)]">
-                  {Math.round(threshold * 100)}%
-                </span>
-              </div>
-              <input
-                id="conf-slider"
-                type="range"
-                min={0.5}
-                max={0.9}
-                step={0.02}
-                value={threshold}
-                onChange={(e) => setThreshold(Number(e.target.value))}
-                className="w-full"
-              />
-            </div>
-
-            <div className="lg:col-span-2 p-3.5 sm:p-4 space-y-1.5">
-              <label htmlFor="fee-input" className="block type-label">
-                Task fee (tUSD8)
-              </label>
-              <input
-                id="fee-input"
-                type="number"
-                min={0.05}
-                max={1.0}
-                step={0.05}
-                value={feePerTask}
-                onChange={(e) => setFeePerTask(Number(e.target.value))}
-                className="w-full min-h-[44px] sm:min-h-[36px] px-3 rounded-[8px] font-mono text-sm tabular-nums hairline bg-[var(--bg)] text-[var(--ink)]"
-              />
-            </div>
-
-            <div className="lg:col-span-2 p-3.5 sm:p-4 flex items-end">
-              <button
-                type="button"
-                disabled={running || uploading}
-                onClick={runSikioAgent}
-                className="w-full min-h-[44px] sm:min-h-[38px] inline-flex items-center justify-center gap-2 px-4 rounded-[8px] text-sm font-semibold bg-[var(--signal)] text-[#fbf8f1] hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer"
-              >
-                <Play className="w-3.5 h-3.5 fill-current" />
-                {running ? "Running…" : "Run agent"}
-              </button>
-            </div>
+        <div className="p-4 sm:p-5 space-y-1">
+          <div className="text-[13px] text-[var(--mute)]">Paid once</div>
+          <div className="text-2xl sm:text-[28px] font-extrabold tabular-nums tracking-[-0.02em] text-[var(--green-ink)]">
+            {batch.spentTusd8.toFixed(2)}
           </div>
-
-          {/* Animated 4-step pipeline progress indicator */}
-          {running && pipelineStep >= 0 && (
-            <div
-              aria-live="polite"
-              className="px-4 py-3 hairline-t bg-[var(--bg)]/55 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs"
-            >
-              {PIPELINE_STEPS.map((label, i) => {
-                const done = i < pipelineStep;
-                const active = i === pipelineStep;
-                return (
-                  <div key={label} className="flex items-center gap-2 min-w-0">
-                    <span
-                      className={`w-4 h-4 rounded-full shrink-0 inline-flex items-center justify-center font-mono text-[10px] ${
-                        done
-                          ? "bg-[var(--green)] text-[#fbf8f1] sikio-check-pop"
-                          : active
-                          ? "bg-[var(--signal)] text-[#fbf8f1] sikio-led"
-                          : "bg-[var(--panel)] text-[var(--mute)]"
-                      }`}
-                    >
-                      {done ? <Check className="w-2.5 h-2.5" /> : i + 1}
-                    </span>
-                    <span
-                      className={`truncate ${
-                        done || active
-                          ? "text-[var(--ink)] font-medium"
-                          : "text-[var(--mute)]"
-                      }`}
-                    >
-                      {label}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {selectedClipId === "custom-upload" && (
-            <div className="p-4 hairline-t bg-[var(--bg)]/50">
-              <label htmlFor="custom-script" className="block type-label mb-1.5">
-                Optional reference transcript ({customDuration}s audio)
-              </label>
-              <input
-                id="custom-script"
-                type="text"
-                value={customTranscript}
-                onChange={(e) => setCustomTranscript(e.target.value)}
-                placeholder="Paste rough transcript or leave empty for local ASR"
-                className="w-full min-h-[44px] px-3 rounded-[8px] text-sm hairline bg-[var(--paper)] text-[var(--ink)]"
-              />
-            </div>
-          )}
-
-          {error && (
-            <div
-              role="alert"
-              className="px-5 py-3 hairline-t bg-[var(--red-bg)] text-xs font-medium text-[var(--red)]"
-            >
-              {error}
-            </div>
-          )}
-
-          {notice && (
-            <div
-              aria-live="polite"
-              className="px-5 py-2.5 hairline-t bg-[var(--green-bg)] text-xs font-medium text-[var(--green)] flex flex-wrap items-center justify-between gap-2"
-            >
-              <span>{notice}</span>
-              <Link
-                href="/ear"
-                className="min-h-[40px] px-2.5 inline-flex items-center gap-1 font-semibold underline underline-offset-2"
+          <div className="text-[13px] text-[var(--mute)]">tUSD8, AI and humans</div>
+        </div>
+        <div className="p-4 sm:p-5 space-y-1">
+          <div className="text-[13px] text-[var(--mute)]">Held for review</div>
+          <div className="text-2xl sm:text-[28px] font-extrabold tabular-nums tracking-[-0.02em] text-[var(--signal-ink)]">
+            {batch.reservedTusd8.toFixed(2)}
+          </div>
+          <div className="text-[13px] text-[var(--mute)]">tUSD8 in escrow</div>
+        </div>
+        <div className="p-4 sm:p-5 space-y-1">
+          <div className="text-[13px] text-[var(--mute)]">Cost per minute</div>
+          {costMetrics ? (
+            <>
+              <div
+                className={`text-2xl sm:text-[28px] font-extrabold tabular-nums tracking-[-0.02em] ${
+                  costMetrics.isCheaperThanFull ? "text-[var(--ink)]" : "text-[var(--amber)]"
+                }`}
               >
-                Open Ear <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
-            </div>
+                ${costMetrics.costPerMinuteProjected.toFixed(2)}
+              </div>
+              <div className="text-[13px] text-[var(--mute)]">
+                vs ${costMetrics.fullHumanReviewCostPerMin.toFixed(2)} for a full human pass
+              </div>
+            </>
+          ) : (
+            <div className="text-[15px] text-[var(--mute)] pt-1">Run a clip to see it</div>
           )}
         </div>
       </section>
 
-      {/* Main 2-column Editorial Print Desk Workspace */}
-      <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        <div className="lg:col-span-8 space-y-6">
-          {data.jobs.length > 1 && (
-            <div className="flex flex-wrap items-center gap-2">
-              {data.jobs.map((j) => (
-                <button
-                  key={j.id}
-                  type="button"
-                  onClick={() => setActiveJobId(j.id)}
-                  className={`min-h-[40px] px-3.5 rounded-full text-xs font-medium hairline transition-colors cursor-pointer ${
-                    activeJob?.id === j.id
-                      ? "bg-[var(--ink)] text-[var(--paper)]"
-                      : "bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--hover)]"
-                  }`}
-                >
-                  {j.title}
-                </button>
-              ))}
+      {/* Run the agent */}
+      <section
+        aria-labelledby="run-heading"
+        className="rounded-[var(--r)] hairline bg-[var(--paper)] overflow-hidden sikio-rise"
+        style={{ ["--i" as string]: 2 }}
+      >
+        <div className="grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-[var(--line)]">
+          <div className="lg:col-span-5 p-4 sm:p-5 space-y-2.5 min-w-0">
+            <h2 id="run-heading" className="text-sm font-bold text-[var(--ink)]">
+              Run the agent on a clip
+            </h2>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {data.showcaseClips.map((c) => {
+                const active = selectedClipId === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setSelectedClipId(c.id)}
+                    className={`min-h-[44px] sm:min-h-[38px] px-3 rounded-full text-[13px] font-semibold hairline transition-colors cursor-pointer whitespace-nowrap ${
+                      active
+                        ? "bg-[var(--ink)] text-[var(--paper)] border-[var(--ink)]"
+                        : "bg-[var(--paper)] text-[var(--ink)] hover:bg-[var(--hover)]"
+                    }`}
+                  >
+                    {c.shortLabel || `${c.city} · ${c.languageTag}`}
+                  </button>
+                );
+              })}
+              <label
+                className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3 rounded-full text-[13px] font-semibold hairline border-dashed cursor-pointer transition-colors whitespace-nowrap focus-within:outline focus-within:outline-2 focus-within:outline-[var(--heard)] ${
+                  selectedClipId === "custom-upload"
+                    ? "bg-[var(--ink)] text-[var(--paper)]"
+                    : "bg-[var(--paper)] text-[var(--ink-2)] hover:text-[var(--ink)]"
+                }`}
+              >
+                <Upload className="w-4 h-4" />
+                {uploading
+                  ? "Uploading"
+                  : customFileName
+                  ? customFileName.length > 16
+                    ? `${customFileName.slice(0, 14)}…`
+                    : customFileName
+                  : "Your own audio"}
+                <input
+                  type="file"
+                  accept="audio/*,video/*"
+                  disabled={uploading}
+                  onChange={handleFileUpload}
+                  className="sr-only"
+                />
+              </label>
             </div>
-          )}
+          </div>
 
-          {activeJob ? (
-            <>
+          <div className="lg:col-span-3 p-4 sm:p-5 space-y-3">
+            <div className="flex items-baseline justify-between gap-2">
+              <label htmlFor="conf-slider" className="text-[13px] text-[var(--ink-2)]">
+                Ask a human when the AI is below
+              </label>
+              <span className="font-mono text-[15px] tabular-nums text-[var(--ink)]">
+                {Math.round(threshold * 100)}%
+              </span>
+            </div>
+            <input
+              id="conf-slider"
+              type="range"
+              min={0.5}
+              max={0.9}
+              step={0.02}
+              value={threshold}
+              onChange={(e) => setThreshold(Number(e.target.value))}
+              className="w-full"
+            />
+          </div>
+
+          <div className="lg:col-span-2 p-4 sm:p-5 space-y-1.5">
+            <label htmlFor="fee-input" className="block text-[13px] text-[var(--ink-2)]">
+              Pay per word, tUSD8
+            </label>
+            <input
+              id="fee-input"
+              type="number"
+              inputMode="decimal"
+              min={0.05}
+              max={batch.maxTaskFeeTusd8}
+              step={0.05}
+              value={feePerTask}
+              onChange={(e) => setFeePerTask(Number(e.target.value))}
+              className="w-full min-h-[44px] sm:min-h-[40px] px-3 rounded-[var(--r-sm)] font-mono text-[15px] tabular-nums hairline bg-[var(--bg)] text-[var(--ink)]"
+            />
+          </div>
+
+          <div className="lg:col-span-2 p-4 sm:p-5 flex items-end">
+            <Button
+              variant="primary"
+              disabled={running || uploading || batch.agentRevoked}
+              onClick={runSikioAgent}
+              className="w-full"
+            >
+              <Play className="w-4 h-4 fill-current" />
+              {running ? "Running" : "Run agent"}
+            </Button>
+          </div>
+        </div>
+
+        {batch.agentRevoked && (
+          <div className="px-4 sm:px-5 py-3 hairline-t text-[14px] text-[var(--red)] bg-[var(--red-bg)]">
+            The agent is stopped. Restart it in the agent rules below to run a clip.
+          </div>
+        )}
+
+        {running && pipelineStep >= 0 && (
+          <ol
+            aria-live="polite"
+            className="px-4 sm:px-5 py-3 hairline-t bg-[var(--bg)] grid grid-cols-1 sm:grid-cols-4 gap-2 text-[13px]"
+          >
+            {PIPELINE_STEPS.map((label, i) => {
+              const done = i < pipelineStep;
+              const active = i === pipelineStep;
+              return (
+                <li key={label} className="flex items-center gap-2 min-w-0">
+                  <span
+                    className={`w-5 h-5 rounded-full shrink-0 inline-flex items-center justify-center font-mono text-[11px] ${
+                      done
+                        ? "bg-[var(--green)] text-white sikio-check-pop"
+                        : active
+                        ? "bg-[var(--ink)] text-[var(--paper)] sikio-led"
+                        : "bg-[var(--panel)] text-[var(--mute)]"
+                    }`}
+                  >
+                    {done ? <Check className="w-3 h-3" /> : i + 1}
+                  </span>
+                  <span className={done || active ? "text-[var(--ink)] font-medium" : "text-[var(--mute)]"}>
+                    {label}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+
+        {selectedClipId === "custom-upload" && (
+          <div className="px-4 sm:px-5 py-4 hairline-t bg-[var(--bg)] space-y-1.5">
+            <label htmlFor="custom-script" className="block text-[13px] text-[var(--ink-2)]">
+              Rough transcript, optional ({customDuration}s of audio)
+            </label>
+            <input
+              id="custom-script"
+              type="text"
+              value={customTranscript}
+              onChange={(e) => setCustomTranscript(e.target.value)}
+              placeholder="Paste a rough transcript, or leave empty for the Sikio local ASR engine"
+              className="w-full min-h-[44px] px-3 rounded-[var(--r-sm)] text-[15px] hairline bg-[var(--paper)] text-[var(--ink)]"
+            />
+          </div>
+        )}
+
+        {error && (
+          <div role="alert" className="px-4 sm:px-5 py-3 hairline-t bg-[var(--red-bg)] text-[14px] font-medium text-[var(--red)]">
+            {error}
+          </div>
+        )}
+
+        {notice && (
+          <div
+            aria-live="polite"
+            className="px-4 sm:px-5 py-2.5 hairline-t bg-[var(--green-bg)] text-[14px] font-medium text-[var(--green-ink)] flex flex-wrap items-center justify-between gap-2"
+          >
+            <span className="min-w-0">{notice}</span>
+            <Link href="/ear" className="min-h-[40px] inline-flex items-center gap-1 font-semibold underline underline-offset-2">
+              Open Ear <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+        )}
+      </section>
+
+      {/* Job switcher */}
+      {data.jobs.length > 1 && (
+        <nav aria-label="Clips in this batch" className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+          {data.jobs.map((j) => (
+            <button
+              key={j.id}
+              type="button"
+              aria-pressed={activeJob?.id === j.id}
+              onClick={() => setActiveJobId(j.id)}
+              className={`min-h-[44px] sm:min-h-[36px] px-3.5 rounded-full text-[13px] font-semibold hairline transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                activeJob?.id === j.id
+                  ? "bg-[var(--ink)] text-[var(--paper)]"
+                  : "bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--hover)]"
+              }`}
+            >
+              {j.title}
+            </button>
+          ))}
+        </nav>
+      )}
+
+      {activeJob ? (
+        <>
+          {/* Hear and read */}
+          <section className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5 items-start">
+            <div ref={playerRef} className="lg:col-span-7 min-w-0 scroll-mt-24">
               <WaveformPlayer
                 job={activeJob}
                 tasks={activeJobTasks}
                 seekToTime={seekToTime}
                 onTimeChange={setPlayheadTime}
               />
-
+            </div>
+            <div className="lg:col-span-5 min-w-0">
               <CaptionTimeline
                 words={activeJob.words}
                 tasks={activeJobTasks}
                 currentTime={playheadTime}
                 onWordClick={handleWordClick}
               />
-
-              {/* Flagged tasks ledger */}
-              <div className="rounded-[12px] hairline bg-[var(--paper)] overflow-hidden">
-                <div className="px-5 py-3 hairline-b bg-[var(--bg)]/35 flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="type-label">
-                    Escrowed spans ({activeJobTasks.length})
-                  </h2>
-                  <div className="flex items-center gap-4 text-xs font-medium">
-                    <Link
-                      href="/ear"
-                      className="text-[var(--signal-ink)] hover:underline"
-                    >
-                      Ear ({pendingSubmitCount})
-                    </Link>
-                    <Link
-                      href="/approve"
-                      className="text-[var(--ink)] hover:underline"
-                    >
-                      Approve ({pendingApproveCount})
-                    </Link>
-                  </div>
-                </div>
-
-                {activeJobTasks.length === 0 ? (
-                  <div className="p-6 text-sm text-[var(--mute)]">
-                    No words scored below {Math.round(activeJob.confidenceThreshold * 100)}%.
-                  </div>
-                ) : (
-                  <div className="divide-y divide-[var(--line)]">
-                    {activeJobTasks.map((t) => (
-                      <div
-                        key={t.id}
-                        className="px-5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm hover:bg-[var(--hover)] transition-colors"
-                      >
-                        <div className="min-w-0 flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setSeekToTime(t.start)}
-                            className="font-mono text-xs px-2 py-0.5 rounded-[6px] bg-[var(--panel)] text-[var(--ink)] tabular-nums cursor-pointer"
-                          >
-                            {t.start.toFixed(1)}s · {t.end.toFixed(1)}s
-                          </button>
-                          <span className="font-semibold text-[var(--ink)]">
-                            {t.aiGuess}
-                          </span>
-                          {t.submittedText && t.submittedText !== t.aiGuess && (
-                            <span className="text-[var(--green)] font-semibold">
-                              → {t.submittedText}
-                            </span>
-                          )}
-                          <span className="font-mono text-xs text-[var(--mute)] tabular-nums">
-                            {Math.round(t.minConfidence * 100)}% · {t.editorCity}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-3 shrink-0">
-                          <span className="font-mono text-xs tabular-nums text-[var(--ink)]">
-                            {t.feeTusd8.toFixed(2)} tUSD8
-                          </span>
-                          <TaskStatusPill status={t.status} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          ) : (
-            /* Pre-run Hero: Living Editorial Proof Sheet Preview with Silky Organic Ribbon */
-            <div
-              key={activePreview.clipId}
-              className="rounded-[12px] hairline double-rule bg-[var(--paper)] hero-elevation overflow-hidden sikio-rise"
-            >
-              <div className="px-5 py-3 hairline-b bg-[var(--bg)]/45 flex flex-wrap items-center justify-between gap-2 font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--mute)]">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-[var(--signal)] sikio-led" />
-                  <span className="text-[var(--ink-2)]">
-                    Proof preview · {activePreview.city} ({activePreview.lang})
-                  </span>
-                </div>
-                <span className="tabular-nums">x402 · 0.04 tUSD8</span>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-12 divide-y md:divide-y-0 md:divide-x divide-[var(--line)]">
-                {/* Galley wave + animated proof sentence */}
-                <div className="md:col-span-8 p-5 sm:p-6 space-y-5">
-                  <div className="rounded-[10px] hairline bg-[var(--bg)]/55 px-2 py-1.5">
-                    <OrganicWaveRibbon
-                      audioUrl={`/clips/${activePreview.clipId}.wav`}
-                      seedKey={activePreview.clipId}
-                      duration={activePreview.duration}
-                      currentTime={previewFixed ? 11.4 : 6.4}
-                      playing={false}
-                      ambientWave
-                      spans={previewWaveSpans}
-                      height={74}
-                      interactive={false}
-                    />
-                  </div>
-
-                  <p
-                    aria-live="polite"
-                    className="text-[19px] sm:text-[21px] leading-[1.8] text-[var(--ink)]"
-                  >
-                    {activePreview.before}{" "}
-                    <span
-                      key={`${activePreview.clipId}-${previewFixed}`}
-                      className={`inline-block px-1.5 py-0.5 rounded-[5px] font-semibold border-b-2 transition-colors ${
-                        previewFixed
-                          ? "sikio-verdict bg-[var(--green-bg)] text-[var(--green)] border-[var(--green)]"
-                          : "bg-[var(--signal-bg)] text-[var(--signal-ink)] border-[var(--signal)]"
-                      }`}
-                    >
-                      {previewFixed
-                        ? activePreview.pairs[0][1]
-                        : activePreview.pairs[0][0]}
-                    </span>{" "}
-                    {activePreview.after}
-                  </p>
-                </div>
-
-                {/* Right Margin Notes inside Proof Sheet */}
-                <div className="md:col-span-4 p-5 bg-[var(--bg)]/25 space-y-4">
-                  <div className="type-label">Margin notes · Native fixes</div>
-                  <div className="divide-y divide-[var(--line)]">
-                    {activePreview.pairs.map(([wrong, right, start, , conf]) => (
-                      <div key={wrong} className="py-2.5 first:pt-0 last:pb-0 space-y-1">
-                        <div className="flex items-center justify-between font-mono text-[10px] tabular-nums">
-                          <span className="text-[var(--mute)]">
-                            {start.toFixed(1)}s · {conf}% AI
-                          </span>
-                          <span
-                            className={`px-1.5 py-0.5 rounded-full font-medium ${
-                              previewFixed
-                                ? "bg-[var(--green-bg)] text-[var(--green)]"
-                                : "bg-[var(--signal-bg)] text-[var(--signal-ink)]"
-                            }`}
-                          >
-                            {previewFixed ? "Paid 0.10" : "Escrow 0.10"}
-                          </span>
-                        </div>
-                        <div className="text-xs flex items-center gap-1.5">
-                          <span className="line-through text-[var(--mute)]">{wrong}</span>
-                          <span className="font-semibold text-[var(--ink)]">→ {right}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
             </div>
-          )}
-        </div>
+          </section>
 
-        {/* Right rail: margin notes, budget, honest cost comparison */}
-        <div className="lg:col-span-4 space-y-6">
-          {activeJob && activeJobTasks.length > 0 && (
-            <div className="rounded-[12px] hairline bg-[var(--paper)] overflow-hidden">
-              <div className="px-5 py-3 hairline-b bg-[var(--bg)]/35 flex items-center justify-between">
-                <span className="type-label">Margin notes</span>
-                <span className="font-mono text-[11px] text-[var(--mute)]">
-                  Click to audition
-                </span>
-              </div>
-              <div className="divide-y divide-[var(--line)]">
-                {activeJobTasks.slice(0, 5).map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => setSeekToTime(t.start)}
-                    className="w-full text-left px-5 py-3 hover:bg-[var(--hover)] transition-colors cursor-pointer space-y-1"
-                  >
-                    <div className="flex items-center justify-between font-mono text-[10px] tabular-nums">
-                      <span className="text-[var(--mute)]">
-                        {t.focusStart.toFixed(1)}s · {t.editorCity}
-                      </span>
-                      <span
-                        className={
-                          t.status === "accepted"
-                            ? "text-[var(--green)] font-semibold"
-                            : "text-[var(--signal-ink)] font-semibold"
-                        }
-                      >
-                        {t.status === "accepted" ? "Fixed" : `${Math.round(t.minConfidence * 100)}% AI`}
-                      </span>
-                    </div>
-                    <div className="text-xs text-[var(--ink)] font-medium">
-                      <span
-                        className={
-                          t.status === "accepted"
-                            ? "line-through text-[var(--mute)] mr-1.5"
-                            : "text-[var(--signal-ink)] mr-1.5"
-                        }
-                      >
-                        {t.aiGuess}
-                      </span>
-                      {t.submittedText && t.submittedText !== t.aiGuess && (
-                        <span className="text-[var(--green)] font-semibold">
-                          → {t.submittedText}
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                ))}
-              </div>
+          {/* Lifecycle board */}
+          <section aria-labelledby="board-heading" className="space-y-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 id="board-heading" className="type-section text-[var(--ink)]">
+                Every unsure word, from flag to payment
+              </h2>
+              <span className="text-[13px] text-[var(--mute)]">
+                Tap a card to hear it in the clip
+              </span>
             </div>
-          )}
-
-          <BudgetRail
-            batch={data.batch}
-            availableBudgetTusd8={data.availableBudgetTusd8}
-            busy={policyBusy}
-            onUpdatePolicy={handleUpdatePolicy}
-          />
-
-          {activeJob && costMetrics && (
-            <div className="rounded-[12px] hairline bg-[var(--paper)] overflow-hidden">
-              <div className="px-5 py-3 hairline-b bg-[var(--bg)]/35 flex items-center justify-between gap-2">
-                <span className="type-label">Cost per minute</span>
-                <span
-                  className={`px-2 py-0.5 rounded-full font-mono text-[11px] tabular-nums ${
-                    costMetrics.reviewTimeSavedPct > 0
-                      ? "bg-[var(--green-bg)] text-[var(--green)]"
-                      : "bg-[var(--panel)] text-[var(--mute)]"
-                  }`}
-                >
-                  {costMetrics.reviewTimeSavedPct}% audio skipped
-                </span>
+            {boardMsg && (
+              <div
+                role={boardMsg.tone === "error" ? "alert" : "status"}
+                className={`rounded-[var(--r-sm)] px-4 py-2.5 text-[14px] font-medium sikio-verdict ${
+                  boardMsg.tone === "error"
+                    ? "bg-[var(--red-bg)] text-[var(--red)]"
+                    : "bg-[var(--green-bg)] text-[var(--green-ink)]"
+                }`}
+              >
+                {boardMsg.text}
               </div>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+              {COLUMNS.map((col) => {
+                const items = grouped[col.key];
+                return (
+                  <div key={col.key} className="space-y-2.5 min-w-0">
+                    <div className={`flex items-center justify-between pb-1.5 col-rule ${col.tone}`}>
+                      <h3 className="text-[13px] font-bold uppercase tracking-[0.05em]">
+                        {col.title}
+                      </h3>
+                      <span className="font-mono text-[13px] tabular-nums">{items.length}</span>
+                    </div>
+                    {items.length === 0 ? (
+                      <p className="text-[13px] leading-snug text-[var(--mute)] rounded-[var(--r-sm)] border border-dashed border-[var(--line)] px-3 py-3">
+                        {col.empty}
+                      </p>
+                    ) : (
+                      items.map((t) => (
+                        <TaskCard
+                          key={`${t.id}-${t.status}`}
+                          task={t}
+                          busy={busyTaskId === t.id}
+                          onSeek={() => seekTo(t.start)}
+                          onAction={(a) => handleTaskAction(t, a)}
+                        />
+                      ))
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
 
-              <div className="p-5 space-y-4">
-                <div className="flex items-baseline gap-2 tabular-nums">
-                  <span
-                    className={`font-mono text-3xl font-semibold ${
-                      costMetrics.isCheaperThanFull
-                        ? "text-[var(--ink)]"
-                        : "text-[var(--amber)]"
-                    }`}
-                  >
-                    ${costMetrics.costPerMinuteProjected.toFixed(2)}
-                  </span>
-                  <span className="font-mono text-xs text-[var(--mute)]">
-                    vs ${costMetrics.fullHumanReviewCostPerMin.toFixed(2)} full review
+          {/* Rules and the money behind this clip */}
+          <section className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 items-start">
+            <BudgetRail
+              batch={batch}
+              availableBudgetTusd8={data.availableBudgetTusd8}
+              busy={policyBusy}
+              onUpdatePolicy={handleUpdatePolicy}
+            />
+
+            {costMetrics && (
+              <div className="rounded-[var(--r)] hairline bg-[var(--paper)] overflow-hidden">
+                <div className="px-4 sm:px-5 py-3 hairline-b flex items-center justify-between gap-2">
+                  <h2 className="text-sm font-bold text-[var(--ink)]">What this clip cost</h2>
+                  <span className="text-[13px] text-[var(--mute)] tabular-nums">
+                    {costMetrics.reviewTimeSavedPct > 0
+                      ? `Humans skipped ${costMetrics.reviewTimeSavedPct}% of the audio`
+                      : "Humans heard all of the audio"}
                   </span>
                 </div>
-
-                {!costMetrics.isCheaperThanFull && (
-                  <p className="text-xs text-[var(--amber)]">
-                    Higher than $3.50/min full pass at this per-task fee. Lower fee per task for short clips.
-                  </p>
-                )}
-
-                <div className="space-y-2 font-mono text-xs tabular-nums">
-                  <div className="flex items-center gap-2">
-                    <span className="w-11 text-[var(--mute)]">Full</span>
-                    <div className="flex-1 h-2 rounded-full bg-[var(--panel)] overflow-hidden">
-                      <div className="h-full w-full bg-[var(--mute)]/45" />
+                <div className="p-4 sm:p-5 space-y-4">
+                  <div className="space-y-2 text-[13px] tabular-nums">
+                    <div className="flex items-center gap-3">
+                      <span className="w-20 text-[var(--mute)]">Full pass</span>
+                      <div className="flex-1 h-2 rounded-full bg-[var(--panel)] overflow-hidden">
+                        <div className="h-full w-full bg-[var(--mute)] opacity-40" />
+                      </div>
+                      <span className="w-14 text-right text-[var(--mute)] font-mono">
+                        ${costMetrics.fullHumanReviewCostPerMin.toFixed(2)}
+                      </span>
                     </div>
-                    <span className="w-12 text-right text-[var(--mute)]">$3.50</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-11 font-semibold text-[var(--ink)]">Sikio</span>
-                    <div className="flex-1 h-2 rounded-full bg-[var(--panel)] overflow-hidden">
-                      <div
-                        style={{
-                          width: `${Math.min(
-                            100,
-                            Math.max(
-                              8,
-                              (costMetrics.costPerMinuteProjected /
-                                costMetrics.fullHumanReviewCostPerMin) *
-                                100
-                            )
-                          )}%`,
-                        }}
-                        className={`h-full sikio-bar-fill ${
-                          costMetrics.isCheaperThanFull
-                            ? "bg-[var(--green)]"
-                            : "bg-[var(--amber)]"
+                    <div className="flex items-center gap-3">
+                      <span className="w-20 font-semibold text-[var(--ink)]">Sikio</span>
+                      <div className="flex-1 h-2 rounded-full bg-[var(--panel)] overflow-hidden">
+                        <div
+                          style={{
+                            width: `${Math.min(
+                              100,
+                              Math.max(
+                                6,
+                                (costMetrics.costPerMinuteProjected /
+                                  costMetrics.fullHumanReviewCostPerMin) *
+                                  100
+                              )
+                            )}%`,
+                          }}
+                          className={`h-full sikio-bar-fill ${
+                            costMetrics.isCheaperThanFull ? "bg-[var(--green)]" : "bg-[var(--amber)]"
+                          }`}
+                        />
+                      </div>
+                      <span
+                        className={`w-14 text-right font-mono font-semibold ${
+                          costMetrics.isCheaperThanFull ? "text-[var(--green-ink)]" : "text-[var(--amber)]"
                         }`}
-                      />
+                      >
+                        ${costMetrics.costPerMinuteProjected.toFixed(2)}
+                      </span>
                     </div>
-                    <span
-                      className={`w-12 text-right font-semibold ${
-                        costMetrics.isCheaperThanFull
-                          ? "text-[var(--green)]"
-                          : "text-[var(--amber)]"
-                      }`}
-                    >
-                      ${costMetrics.costPerMinuteProjected.toFixed(2)}
-                    </span>
                   </div>
-                </div>
 
-                <div className="pt-3 hairline-t space-y-1.5 font-mono text-xs tabular-nums">
-                  <div className="flex justify-between">
-                    <span className="font-sans text-[var(--mute)]">AI x402</span>
-                    <span>{activeJob.inferenceCostTusd8.toFixed(2)} tUSD8</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-sans text-[var(--mute)]">Human settled</span>
-                    <span className="text-[var(--green)]">
-                      {(costMetrics.totalSettled - activeJob.inferenceCostTusd8).toFixed(2)} tUSD8
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-sans text-[var(--mute)]">Escrowed</span>
-                    <span className="text-[var(--amber)]">
-                      {(costMetrics.totalProjected - costMetrics.totalSettled).toFixed(2)} tUSD8
-                    </span>
-                  </div>
+                  {!costMetrics.isCheaperThanFull && (
+                    <p className="text-[13px] text-[var(--amber)]">
+                      At this fee per word, Sikio costs more than a full human pass on this
+                      clip. Lower the fee for short clips.
+                    </p>
+                  )}
+
+                  <dl className="text-[14px] tabular-nums">
+                    <div className="flex justify-between gap-3 py-2 hairline-t">
+                      <dt className="text-[var(--mute)] min-w-0">
+                        AI transcript, {activeJob.transcriptionEngine}
+                      </dt>
+                      <dd className="font-mono shrink-0">{activeJob.inferenceCostTusd8.toFixed(2)}</dd>
+                    </div>
+                    <div className="flex justify-between gap-3 py-2 hairline-t">
+                      <dt className="text-[var(--mute)]">Native speakers, paid</dt>
+                      <dd className="font-mono text-[var(--green-ink)]">
+                        {(costMetrics.totalSettled - activeJob.inferenceCostTusd8).toFixed(2)}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-3 py-2 hairline-t">
+                      <dt className="text-[var(--mute)]">Native speakers, held</dt>
+                      <dd className="font-mono text-[var(--signal-ink)]">
+                        {(costMetrics.totalProjected - costMetrics.totalSettled).toFixed(2)}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  {lastX402 && (
+                    <div className="rounded-[var(--r-sm)] bg-[var(--bg)] px-3 py-2.5 text-[13px] space-y-0.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-[var(--ink)]">x402 payment</span>
+                        <span className="font-mono text-[var(--green-ink)]">402 then 200</span>
+                      </div>
+                      <div className="font-mono text-[12px] text-[var(--mute)] truncate">
+                        {lastX402.amountDisplay} · {lastX402.requestId}
+                      </div>
+                    </div>
+                  )}
+
+                  <Link href="/receipts" className="inline-flex min-h-[44px] items-center gap-1 text-[14px] font-semibold text-[var(--ink)] underline underline-offset-4">
+                    All receipts <ArrowRight className="w-4 h-4" />
+                  </Link>
                 </div>
               </div>
-            </div>
-          )}
-
-          {lastX402 && (
-            <div className="rounded-[12px] hairline bg-[var(--paper)] px-5 py-3.5 space-y-1 font-mono text-xs tabular-nums">
-              <div className="flex items-center justify-between">
-                <span className="type-label">x402 receipt</span>
-                <span className="px-2 py-0.5 rounded-full bg-[var(--green-bg)] text-[var(--green)] text-[11px]">
-                  402 · 200
-                </span>
-              </div>
-              <div className="text-[var(--ink)]">{lastX402.amountDisplay}</div>
-              <div className="text-[var(--mute)] truncate">{lastX402.requestId}</div>
-            </div>
-          )}
-        </div>
-      </section>
+            )}
+          </section>
+        </>
+      ) : (
+        <section className="rounded-[var(--r)] hairline bg-[var(--paper)] p-5 sm:p-7 space-y-5">
+          <div className="space-y-1.5 max-w-xl">
+            <h2 className="type-section">No clip in this batch yet</h2>
+            <p className="text-[15px] text-[var(--ink-2)]">
+              Pick a sample clip above and run the agent. Each unsure word then moves
+              across these four steps.
+            </p>
+          </div>
+          <ol className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            {COLUMNS.map((col, i) => (
+              <li key={col.key} className="space-y-2">
+                <div className={`flex items-center justify-between pb-1.5 col-rule ${col.tone}`}>
+                  <span className="text-[13px] font-bold uppercase tracking-[0.05em]">{col.title}</span>
+                  <span className="font-mono text-[13px]">{i + 1}</span>
+                </div>
+                <p className="text-[13px] text-[var(--mute)]">{col.explain}</p>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
     </div>
   );
 }
 
-function TaskStatusPill({ status }: { status: ReviewTask["status"] }) {
-  const styles: Record<ReviewTask["status"], string> = {
-    offered: "bg-[var(--signal-bg)] text-[var(--signal-ink)]",
-    submitted: "bg-[var(--amber-bg)] text-[var(--amber)]",
-    accepted: "bg-[var(--green-bg)] text-[var(--green)]",
-    rejected: "bg-[var(--red-bg)] text-[var(--red)]",
-    expired: "bg-[var(--panel)] text-[var(--mute)]",
-  };
-  const labels: Record<ReviewTask["status"], string> = {
-    offered: "Offered",
-    submitted: "In review",
-    accepted: "Paid once",
-    rejected: "Refunded",
-    expired: "Expired",
-  };
+function TaskCard({
+  task: t,
+  busy,
+  onSeek,
+  onAction,
+}: {
+  task: ReviewTask;
+  busy: boolean;
+  onSeek: () => void;
+  onAction: (a: "accept" | "reject" | "expire") => void;
+}) {
+  const changed = t.submittedText && t.submittedText !== t.aiGuess;
+  const live = t.settleMode === "aevum-live";
+
   return (
-    <span
-      className={`px-2.5 py-0.5 rounded-full font-mono text-[11px] font-medium ${styles[status]}`}
-    >
-      {labels[status]}
-    </span>
+    <article className="rounded-[var(--r-sm)] hairline bg-[var(--paper)] sikio-card-in overflow-hidden">
+      <button
+        type="button"
+        onClick={onSeek}
+        className="w-full text-left px-3.5 pt-3 pb-2.5 space-y-1 hover:bg-[var(--hover)] transition-colors cursor-pointer"
+        aria-label={`Hear "${t.aiGuess}" at ${t.focusStart.toFixed(1)} seconds`}
+      >
+        <div className="text-[16px] font-bold leading-snug text-[var(--ink)] break-words">
+          {t.status === "offered" ? (
+            t.aiGuess
+          ) : changed ? (
+            <>
+              <s className="font-medium text-[var(--mute)]">{t.aiGuess}</s>{" "}
+              {t.submittedText}
+            </>
+          ) : (
+            <>
+              {t.submittedText || t.aiGuess}
+              {t.confirmedAiRight && (
+                <span className="ml-1.5 text-[12px] font-semibold text-[var(--mute)]">AI was right</span>
+              )}
+            </>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] text-[var(--mute)] tabular-nums">
+          <span className="inline-flex items-center gap-1 font-mono">
+            <Headphones className="w-3 h-3" aria-hidden="true" />
+            {t.focusStart.toFixed(1)}s
+          </span>
+          <span>AI {Math.round(t.minConfidence * 100)}% sure</span>
+          <span>
+            {t.editorName.split(" ")[0]} · {t.editorCity}
+          </span>
+        </div>
+      </button>
+
+      <div className="px-3.5 py-2 hairline-t flex flex-wrap items-center justify-between gap-2 text-[12px] tabular-nums">
+        {t.status === "offered" && (
+          <>
+            <span className="font-mono text-[var(--signal-ink)]">{t.feeTusd8.toFixed(2)} held</span>
+            <span className="flex items-center gap-1">
+              <Link href="/ear" className={buttonClass("ghost", "sm", "!px-2.5")}>
+                Ear
+              </Link>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="!px-2.5"
+                disabled={busy}
+                onClick={() => onAction("expire")}
+              >
+                Return fee
+              </Button>
+            </span>
+          </>
+        )}
+        {t.status === "submitted" && (
+          <div className="w-full grid grid-cols-[1fr_auto] gap-2 py-0.5">
+            <Button variant="pay" size="sm" disabled={busy} onClick={() => onAction("accept")}>
+              {busy ? "Paying" : `Approve and pay ${t.feeTusd8.toFixed(2)}`}
+            </Button>
+            <Button variant="danger" size="sm" disabled={busy} onClick={() => onAction("reject")}>
+              Reject
+            </Button>
+          </div>
+        )}
+        {t.status === "accepted" && (
+          <>
+            <span className="font-mono text-[var(--green-ink)]">
+              {t.feeTusd8.toFixed(2)} paid{t.approvedBy ? ` · ${shortAddr(t.approvedBy)}` : ""}
+            </span>
+            {t.settleTxHash && live ? (
+              <a
+                href={explorerTxUrl(t.settleTxHash)}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 font-mono text-[var(--green-ink)] hover:underline"
+              >
+                {shortHash(t.settleTxHash)} <ExternalLink className="w-3 h-3" />
+              </a>
+            ) : (
+              <ModeTag live={false} />
+            )}
+          </>
+        )}
+        {(t.status === "rejected" || t.status === "expired") && (
+          <span className="text-[var(--mute)]">
+            {t.feeTusd8.toFixed(2)} back in the budget
+            {t.status === "expired" ? " after expiry" : ""}
+          </span>
+        )}
+      </div>
+    </article>
   );
 }
