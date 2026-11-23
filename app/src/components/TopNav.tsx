@@ -94,9 +94,9 @@ export function TopNav() {
     >
       <div className="max-w-[1240px] mx-auto px-4 sm:px-7 h-15 flex items-center justify-between gap-3">
         <div className="flex items-center gap-7 min-w-0">
-          <Link href="/" className="flex items-center gap-2.5 shrink-0 group">
+          <Link href="/" className="flex items-center gap-2.5 shrink-0 group min-h-[44px]">
             <SikioMark className="w-6 h-6 text-[var(--ink)] transition-transform duration-200 group-hover:scale-105" />
-            <span className="font-editorial text-[21px] font-bold tracking-[-0.03em] text-[var(--ink)] leading-none">
+            <span className="text-[21px] font-extrabold tracking-[-0.03em] text-[var(--ink)] leading-none">
               Sikio<span className="text-[var(--signal)]">.</span>
             </span>
           </Link>
