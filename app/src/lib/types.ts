@@ -44,7 +44,7 @@ export interface ReviewTask {
   aiGuess: string;
   contextAfter: string;
   minConfidence: number;
-  feeTusd8: number; // e.g. 0.25
+  feeTusd8: number; // e.g. 0.10
   editorAddress: `0x${string}`;
   editorName: string;
   editorCity: string;
@@ -61,6 +61,7 @@ export interface ReviewTask {
   correctionHash?: `0x${string}`;
   offerTxHash?: `0x${string}`;
   settleTxHash?: `0x${string}`;
+  settleMode?: ExecutionMode;
   gasMode: "zero-gas-relayed" | "paymaster-erc4337" | "sandbox";
 }
 
@@ -93,9 +94,9 @@ export interface CaptionJob {
   audioUrl: string;
   durationSeconds: number;
   confidenceThreshold: number; // default 0.78
-  feePerTaskTusd8: number; // default 0.25
+  feePerTaskTusd8: number; // default 0.10
   inferenceCostTusd8: number; // e.g. 0.04
-  transcriptionEngine: string; // explicitly labelled as Sikio endpoint!
+  transcriptionEngine: string; // explicitly labelled as Sikio endpoint
   x402RequestId: string;
   x402TxHash?: `0x${string}`;
   words: CaptionWord[];
@@ -115,6 +116,7 @@ export interface PaymentReceipt {
   actorLabel: string;
   txHash: `0x${string}`;
   mode: ExecutionMode;
+  settlementState?: "active" | "settled" | "refunded";
   gasToken: "tUSD8 (sponsored)" | "tQDAY" | "sandbox";
   note: string;
   timestamp: string;
@@ -136,7 +138,7 @@ export interface BenchmarkRun {
   targetedReviewSec: number;
   fullReviewErrorsLeft: number;
   targetedReviewErrorsLeft: number;
-  overconfidentAiMisses: number; // errors AI scored above threshold!
+  overconfidentAiMisses: number; // errors AI scored above threshold
   fullReviewCostUsd: number;
   targetedCostUsd: number;
   recordedAt: string;
@@ -148,5 +150,6 @@ export interface SikioState {
   jobs: CaptionJob[];
   tasks: ReviewTask[];
   receipts: PaymentReceipt[];
+  verifiedOnChainProofs: PaymentReceipt[];
   benchmarks: BenchmarkRun[];
 }
