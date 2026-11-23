@@ -16,7 +16,7 @@
   - Lint: `cd app && pnpm lint`
   - Unit tests: `cd app && pnpm test`
   - Production build: `cd app && pnpm build`
-  - E2E verification (requires running server on `127.0.0.1:3000`): `cd app && node scripts/e2e-verify.mjs`
+  - E2E verification (requires running server on `127.0.0.1:3000`, or set `SIKIO_BASE_URL`): `cd app && node scripts/e2e-verify.mjs`
 
 ---
 
@@ -45,29 +45,22 @@ Real Nov 22, 2026 confirmed on-chain proof hashes belong exclusively in `verifie
 
 ---
 
-## 5. Visual design and motion rules (Lifecycle board + Voice-note thread)
+## 5. Visual design and motion rules ("Candy outline")
 
-- **Concept**:
-  - Studio (`/`) is a lifecycle board. Every unsure word is a card that moves through four columns: **Needs an ear → Heard → Paid once → Returned**. A judge should understand Sikio from this one screen.
-  - Ear (`/ear`) is a voice-note thread. The agent sends a short voice note and asks what was said, the editor replies, and the payment arrives as a message. No crypto words on this screen; show amounts as `$0.10`.
-- **Type**: `Hanken Grotesk` 400 to 800 for everything (display at 800 with tight tracking), `Fragment Mono` for timings, hashes and amounts in columns (`tabular-nums`). No serif display faces. Never use `Inter`, `VT323`, `Fraunces` or `Outfit`.
-- **Theme tokens** (`app/src/app/globals.css`, keep names stable):
-  - Light: sage desk `#e7ebe8` (`--bg`), white cards `#ffffff` (`--paper`), ink `#15201b` (`--ink`).
-  - Dark: `#0e1311` desk, `#161d1a` cards, `#e6ede9` ink.
-  - Colour only encodes state, and the same colour means the same state everywhere: `--signal` ochre = needs an ear, `--heard` blue = heard and waiting for approval, `--green` = paid once, `--mute` grey = returned or expired, `--amber` = cost warning, `--red` = error or destructive.
-  - Primary buttons are ink. The pay button is green. There is no brand accent colour beyond these.
-- **Shared primitives**: use `app/src/components/ui.tsx` (`Button`, `buttonClass`, `ButtonLink`, `StatusPill`, `ModeTag`) instead of new long class strings.
-- **Caption stage**: the live caption inside `WaveformPlayer` is a dark burned-in subtitle strip in both themes; unsure words get a dashed ochre underline, fixed words a solid green one.
-- **Audio visualization (`OrganicWaveRibbon`)**: always the fluid dual-contour Bezier ribbon from real Web Audio PCM data, including inside Ear voice notes. Never vertical bar histograms.
-- **Anti-slop discipline**:
-  - Zero gradients, neon glows, floating blobs or glassmorphism (blur only on the sticky header).
-  - Zero emoji icons (use `lucide-react`), zero bento grids, zero checkmark bullet lists, zero filler headings, zero banned words (`unlock`, `seamless`, `revolutionize`, `supercharge`, `next-generation`, `harness`).
-  - **Sentence case** everywhere. Zero em dashes or en dashes in UI copy.
-  - Plain words over system words: "Needs an ear", "Held", "Paid once", "Return fee", "Ask a human when the AI is below 78%". Not "escrowed spans", "floor" or "expire".
-  - At most one soft shadow (`hero-elevation`), used on the Ear thread.
-  - All interactive controls `>= 44px` on mobile (`375px`), no horizontal scrolling, no clipped tables.
-  - Every screen has loading, empty and error states.
-- **Motion discipline**: single easing `cubic-bezier(0.25, 1, 0.5, 1)` for `.sikio-rise`, `.sikio-card-in` (a card arriving in a new column), `.sikio-bubble` (a new message in Ear), `.sikio-verdict`, `.sikio-check-pop` and `.sikio-bar-fill`. Full `prefers-reduced-motion` support.
+Chosen by the founder from a visual questionnaire (Nov 23, 2026): story page first, bold pastel colour, very round shapes, lots of space, code-style headlines, subtle but premium motion, illustrations and candy-3D objects, top menu, Africa shown subtly through words and places. References they liked: Gumroad, Stripe, Paystack, Vercel.
+
+- **Routes**: `/` is the full-bleed landing page (story first). The working app lives in the `app/src/app/(app)/` route group: `/studio`, `/ear`, `/approve`, `/receipts`, `/legal/*`, framed by `(app)/layout.tsx`.
+- **Look**: blush canvas `#fff6fb`, white cards, **2px ink outlines (`--outline`) with hard offset shadows** (`--shadow` 4px 4px 0), very round corners (`--r` 22px, pill buttons). Utility classes: `.brut`, `.brut-sm`, `.brut-lg`, `.brut-flat`, `.press` (button lifts on hover, sinks into its shadow on press), `.pastel-*`.
+- **Colour**: pastels `--pink #ffc8ea`, `--yellow #fff27a`, `--sky #b8efff`, `--mint #c6f4c1`, `--lilac`, `--peach`. Pastels always carry `--on-pastel` (#111) text in both themes. Primary action = pink pill with outline. Pay action = mint pill.
+- **State colour (never mix)**: yellow = needs an ear, sky = heard, mint = paid once, grey (`--returned-bg`) = returned or expired, peach/`--warn` = cost warning, `--error` = error. Text-on-canvas state colours: `--flag-ink`, `--heard-ink`, `--paid-ink`.
+- **Dark theme ("dusk")**: plum canvas `#2a2430` so black outlines and shadows still read. Light is the default; dark only when chosen with the toggle.
+- **Type**: `Space Mono` 700 for headlines, numbers and labels (`.font-display`, `.type-hero`, `.type-display`, `.type-page`, `.type-section`, `.type-label`, Tailwind `font-mono`). `Space Grotesk` for all body text. Never set long paragraphs in mono.
+- **Shared code**: `components/ui.tsx` (`Button`, `buttonClass`, `ButtonLink`, `Card`, `Tag`, `StatusPill`, `ModeTag`, `Reveal`, `CountUp`, `SPRING`), `components/art.tsx` (`Coin`, `Orb`, `Blob`, `Sparkle`, `IllustrationAI/Ear/Pay`, `WaveGlyph`, `wavePath`). Reuse them instead of new one-off styles.
+- **Motion**: the `motion` library (`motion/react`) for springs, `layoutId` transitions (cards moving between lifecycle columns, nav pill), `AnimatePresence` for enter and exit, `whileInView` reveals. `MotionProvider` sets `reducedMotion="user"`, so every animation respects reduced motion. CSS helpers: `.sikio-float`, `.sikio-rise`, `.sikio-card-in`, `.sikio-bubble`, `.sikio-verdict`, `.sikio-check-pop`, `.sikio-marquee`. Motion should explain state changes (a word moving from heard to paid, a payment landing), not decorate.
+- **Audio**: real clips use `OrganicWaveRibbon` (smooth Bezier ribbon from real PCM data, never bar histograms). `WaveGlyph` is decorative only, for illustrations.
+- **Honesty in visuals**: never show fake photos of editors; real photos only when supplied. Illustrations stand in until then. Sandbox receipts are labelled sandbox.
+- **Copy**: sentence case, plain words ("Needs an ear", "Held", "Paid once", "Return fee"), no em or en dashes, no banned words (`unlock`, `seamless`, `revolutionize`, `supercharge`, `next-generation`, `harness`). Little text per screen.
+- **Quality bar**: every control >= 44px on a 375px phone, no horizontal scroll, every screen has loading, empty and error states, visible focus rings.
 
 ---
 
