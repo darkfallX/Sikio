@@ -10,6 +10,10 @@ interface CaptionTimelineProps {
   onWordClick: (word: CaptionWord) => void;
 }
 
+/*
+  Full transcript. Every word can be clicked to seek. Word colour follows the
+  lifecycle board: ochre needs an ear, blue heard, green paid once.
+*/
 export function CaptionTimeline({
   words,
   tasks,
@@ -22,25 +26,27 @@ export function CaptionTimeline({
     return map;
   }, [tasks]);
 
-  const flaggedCount = words.filter((w) => w.flagged).length;
+  const flaggedCount = words.filter((w) => w.flagged && !w.fixedByHuman).length;
   const fixedCount = words.filter((w) => w.fixedByHuman).length;
 
   return (
-    <div className="rounded-[12px] hairline bg-[var(--paper)] overflow-hidden">
-      <div className="px-5 py-3 hairline-b bg-[var(--bg)]/35 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="type-label">Galley proof transcript</h2>
-        <div className="flex items-center gap-2.5 font-mono text-[11px] tabular-nums">
-          <span className="text-[var(--mute)]">{words.length} words</span>
-          <span className="px-2 py-0.5 rounded-full bg-[var(--signal-bg)] text-[var(--signal-ink)] font-medium">
-            {flaggedCount} uncertain
+    <div className="rounded-[var(--r)] hairline bg-[var(--paper)] overflow-hidden">
+      <div className="px-4 sm:px-5 py-3 hairline-b flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-bold text-[var(--ink)]">Transcript</h2>
+        <div className="flex items-center gap-3 text-[13px] tabular-nums text-[var(--mute)]">
+          <span>{words.length} words</span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-[var(--signal)]" aria-hidden="true" />
+            {flaggedCount} unsure
           </span>
-          <span className="px-2 py-0.5 rounded-full bg-[var(--green-bg)] text-[var(--green)] font-medium">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-[var(--green)]" aria-hidden="true" />
             {fixedCount} fixed
           </span>
         </div>
       </div>
 
-      <div className="px-5 py-6 sm:px-7 sm:py-7 text-[19px] sm:text-[21px] leading-[1.95] text-[var(--ink)] flex flex-wrap items-baseline gap-x-1.5 gap-y-1.5">
+      <div className="px-4 py-5 sm:px-6 sm:py-6 text-[18px] sm:text-[20px] leading-[1.85] text-[var(--ink)] flex flex-wrap items-baseline gap-x-1 gap-y-1">
         {words
           .filter((w) => w.currentText.trim().length > 0)
           .map((w) => {
@@ -48,26 +54,23 @@ export function CaptionTimeline({
             const isNow =
               currentTime >= w.start - 0.04 && currentTime <= w.end + 0.06;
 
-            let tone =
-              "hover:bg-[var(--hover)] text-[var(--ink)] border-b-2 border-transparent";
+            let tone = "hover:bg-[var(--hover)] text-[var(--ink)]";
             if (w.fixedByHuman) {
               tone =
-                "sikio-verdict bg-[var(--green-bg)] text-[var(--green)] border-b-2 border-[var(--green)] font-semibold";
+                "sikio-verdict bg-[var(--green-bg)] text-[var(--green-ink)] font-semibold";
             } else if (linkedTask?.status === "submitted") {
-              tone =
-                "bg-[var(--amber-bg)] text-[var(--amber)] border-b-2 border-[var(--amber)] font-semibold";
+              tone = "bg-[var(--heard-bg)] text-[var(--heard-ink)] font-semibold";
             } else if (w.flagged) {
-              tone =
-                "bg-[var(--signal-bg)] text-[var(--signal-ink)] border-b-2 border-[var(--signal)] font-semibold";
+              tone = "bg-[var(--signal-bg)] text-[var(--signal-ink)] font-semibold";
             }
 
             if (isNow) {
-              tone += " ring-2 ring-[var(--ink)] ring-offset-1 ring-offset-[var(--paper)]";
+              tone += " underline decoration-2 underline-offset-[6px] decoration-[var(--ink)]";
             }
 
             const titleText = w.fixedByHuman
-              ? `${w.start.toFixed(2)}s · Fixed: "${w.aiText}" → "${w.currentText}"`
-              : `${w.start.toFixed(2)}s · ${Math.round(w.confidence * 100)}%`;
+              ? `${w.start.toFixed(2)}s. AI heard "${w.aiText}", a native speaker wrote "${w.currentText}"`
+              : `${w.start.toFixed(2)}s. AI ${Math.round(w.confidence * 100)}% sure`;
 
             return (
               <button
@@ -75,11 +78,11 @@ export function CaptionTimeline({
                 type="button"
                 onClick={() => onWordClick(w)}
                 title={titleText}
-                className={`px-1 py-0.5 rounded-[5px] transition-colors cursor-pointer ${tone}`}
+                className={`px-1 rounded-[5px] transition-colors cursor-pointer ${tone}`}
               >
                 <span>{w.currentText}</span>
                 {w.flagged && !w.fixedByHuman && (
-                  <sup className="ml-0.5 font-mono text-[10px] tabular-nums opacity-75">
+                  <sup className="ml-0.5 font-mono text-[10px] tabular-nums opacity-80">
                     {Math.round(w.confidence * 100)}%
                   </sup>
                 )}
