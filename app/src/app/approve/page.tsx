@@ -2,15 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import {
-  Play,
-  Pause,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  ArrowRight,
-  ExternalLink,
-} from "lucide-react";
+import { Play, Pause, ExternalLink } from "lucide-react";
 import { BatchBudget, ReviewTask } from "@/lib/types";
 import { explorerTxUrl, shortAddr } from "@/lib/aevum";
 import { useWallet } from "@/components/WalletContext";
@@ -113,17 +105,13 @@ export default function ApprovePage() {
         return;
       }
       await load();
-      if (action === "accept") {
-        setBanner(
-          `Paid ${task.feeTusd8.toFixed(2)} tUSD8 once to ${task.editorName} (${task.editorCity}) and merged "${
-            task.submittedText || task.aiGuess
-          }" into Studio captions.`
-        );
-      } else {
-        setBanner(
-          `Returned ${task.feeTusd8.toFixed(2)} tUSD8 back to available batch budget.`
-        );
-      }
+      setBanner(
+        action === "accept"
+          ? `Paid ${task.feeTusd8.toFixed(2)} tUSD8 once to ${task.editorName} and merged "${
+              task.submittedText || task.aiGuess
+            }".`
+          : `Returned ${task.feeTusd8.toFixed(2)} tUSD8 to available batch budget.`
+      );
     } finally {
       setBusyId(null);
     }
@@ -131,254 +119,212 @@ export default function ApprovePage() {
 
   if (loading || !state) {
     return (
-      <div className="space-y-4">
-        <div className="h-12 w-60 rounded-[5px] bg-[#EBE6DB] animate-pulse" />
-        <div className="h-48 rounded-[6px] bg-[#EBE6DB] animate-pulse" />
+      <div className="space-y-6">
+        <div className="h-14 w-56 rounded-[14px] bg-[var(--panel)] animate-pulse" />
+        <div className="h-56 rounded-[14px] bg-[var(--panel)] animate-pulse" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-16 sm:space-y-24">
       <audio ref={audioRef} onEnded={() => setPlayingId(null)} />
 
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-4 border-b border-[#DDD7CA]">
-        <div>
-          <div className="text-[11px] font-mono uppercase tracking-[0.08em] text-[#5C574E]">
-            Quality Control · Approver {shortAddr(state.batch.approverAddress)}
-          </div>
-          <h1 className="text-2xl sm:text-[30px] font-semibold tracking-[-0.03em] text-[#141311] mt-0.5">
-            Approve & Settle Once
-          </h1>
-          <p className="text-sm text-[#5C574E] mt-0.5">
-            Verify the editor’s wording against the excerpt. ReviewEscrow releases tUSD8 once per taskId.
+      <section className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div className="space-y-2">
+          <h1 className="type-page text-[var(--ink)]">Approve</h1>
+          <p className="text-[16px] text-[var(--ink-2)]">
+            Approver <span className="font-mono text-sm">{shortAddr(state.batch.approverAddress)}</span> verifies wording. ReviewEscrow pays once per task.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 text-xs shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           <Link
             href="/"
-            className="px-3 py-1.5 rounded-[5px] bg-[#FBF9F4] border border-[#DDD7CA] font-medium text-[#141311] hover:border-[#141311] transition-colors"
+            className="min-h-[44px] sm:min-h-[38px] inline-flex items-center px-3.5 rounded-[8px] text-xs font-semibold hairline bg-[var(--paper)] text-[var(--ink)] hover:bg-[var(--hover)]"
           >
             Replay in Studio
           </Link>
-          <Link
-            href="/receipts"
-            className="px-3 py-1.5 rounded-[5px] bg-[#EBE6DB] font-medium text-[#141311] hover:bg-[#DDD7CA] transition-colors"
-          >
-            Receipts
-          </Link>
         </div>
-      </div>
+      </section>
 
       {error && (
-        <div className="rounded-[5px] bg-[#FAEAE4] border border-[#E8C5B8] px-4 py-2.5 text-xs text-[#B33C17]">
+        <div
+          role="alert"
+          className="rounded-[14px] hairline bg-[var(--red-bg)] px-5 py-3.5 text-xs font-medium text-[var(--red)]"
+        >
           {error}
         </div>
       )}
 
       {banner && (
-        <div className="rounded-[5px] bg-[#E7F4ED] border border-[#C3E2D1] px-4 py-2.5 text-xs text-[#1B6B46] flex flex-wrap items-center justify-between gap-2">
-          <span className="flex items-center gap-1.5 font-medium">
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
-            {banner}
-          </span>
-          <Link
-            href="/"
-            className="font-semibold underline inline-flex items-center gap-1"
-          >
-            Replay corrected captions <ArrowRight className="w-3.5 h-3.5" />
+        <div
+          aria-live="polite"
+          className="rounded-[14px] hairline bg-[var(--green-bg)] px-5 py-3.5 text-xs font-medium text-[var(--green)] flex flex-wrap items-center justify-between gap-2"
+        >
+          <span>{banner}</span>
+          <Link href="/" className="font-semibold underline underline-offset-2">
+            Replay fixed captions
           </Link>
         </div>
       )}
 
-      {/* Pending QC Queue */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xs font-mono uppercase tracking-[0.06em] font-semibold text-[#5C574E]">
-            Pending Decisions ({waiting.length})
-          </h2>
-          <span className="text-xs font-mono text-[#5C574E] tabular-nums">
-            Escrowed: {state.batch.reservedTusd8.toFixed(2)} tUSD8
+      {/* Pending queue ledger (hero object) */}
+      <section className="rounded-[14px] hairline bg-[var(--paper)] hero-elevation overflow-hidden">
+        <div className="px-5 py-3.5 hairline-b flex items-center justify-between">
+          <h2 className="type-label">Waiting ({waiting.length})</h2>
+          <span className="font-mono text-xs tabular-nums text-[var(--mute)]">
+            Escrowed {state.batch.reservedTusd8.toFixed(2)} tUSD8
           </span>
         </div>
 
         {waiting.length === 0 ? (
-          <div className="rounded-[6px] border border-[#DDD7CA] bg-[#FBF9F4] p-8 text-center space-y-2">
-            <p className="text-sm font-semibold text-[#141311]">
-              Approval queue is clear.
-            </p>
-            <p className="text-xs text-[#5C574E]">
-              Run a clip in Studio and submit an editor fix in Ear to verify and settle tUSD8.
-            </p>
+          <div className="p-8 text-sm text-[var(--mute)]">
+            No pending tasks. Run a clip in Studio and submit a fix in Ear.
           </div>
         ) : (
-          <div className="space-y-3">
-            {waiting.map((task) => {
-              const isSubmitted = task.status === "submitted";
-              return (
-                <div
-                  key={task.id}
-                  className="rounded-[6px] border border-[#DDD7CA] bg-[#FBF9F4] overflow-hidden"
-                >
-                  <div className="px-5 py-2.5 border-b border-[#DDD7CA] bg-[#F4F1EA]/70 flex flex-wrap items-center justify-between gap-2 text-xs">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span
-                        className={`px-2 py-0.5 rounded-[4px] font-mono text-[11px] font-medium ${
-                          isSubmitted
-                            ? "bg-[#FBF2DD] text-[#945D00]"
-                            : "bg-[#EBE6DB] text-[#5C574E]"
-                        }`}
-                      >
-                        {isSubmitted ? "SUBMITTED" : "AWAITING EDITOR"}
-                      </span>
-                      <span className="font-semibold text-[#141311]">
-                        {task.clipTitle}
-                      </span>
-                      <span className="font-mono text-[#5C574E]">
-                        {task.start.toFixed(1)}s–{task.end.toFixed(1)}s
-                      </span>
-                    </div>
-                    <span className="font-mono font-semibold text-[#141311] tabular-nums">
-                      {task.feeTusd8.toFixed(2)} tUSD8 escrowed
+          <div className="divide-y divide-[var(--line)]">
+            {waiting.map((task) => (
+              <div
+                key={task.id}
+                className="p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-5"
+              >
+                <div className="space-y-3 flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full font-mono text-[11px] font-medium ${
+                        task.status === "submitted"
+                          ? "bg-[var(--amber-bg)] text-[var(--amber)]"
+                          : "bg-[var(--panel)] text-[var(--mute)]"
+                      }`}
+                    >
+                      {task.status === "submitted" ? "Submitted" : "Offered"}
+                    </span>
+                    <span className="font-semibold text-[var(--ink)]">
+                      {task.clipTitle}
+                    </span>
+                    <span className="font-mono text-[var(--mute)] tabular-nums">
+                      {task.start.toFixed(1)}s · {task.end.toFixed(1)}s
+                    </span>
+                    <span className="text-[var(--mute)]">
+                      {task.editorName} ({task.editorCity})
                     </span>
                   </div>
 
-                  <div className="p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-                    <div className="space-y-3 flex-1">
-                      {/* Split-Comparison Diff */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-sm">
-                        <div className="rounded-[5px] bg-[#FAEAE4]/60 border border-[#E8C5B8] p-3">
-                          <div className="text-[10px] font-mono uppercase tracking-[0.06em] text-[#B33C17] mb-1">
-                            AI Guess ({Math.round(task.minConfidence * 100)}%)
-                          </div>
-                          <div className="font-medium text-[#141311] line-through">
-                            {task.aiGuess}
-                          </div>
-                        </div>
-                        <div className="rounded-[5px] bg-[#E7F4ED]/70 border border-[#C3E2D1] p-3">
-                          <div className="text-[10px] font-mono uppercase tracking-[0.06em] text-[#1B6B46] mb-1">
-                            {task.editorName} ({task.editorCity})
-                          </div>
-                          <div className="font-semibold text-[#141311]">
-                            {task.submittedText || task.aiGuess}
-                          </div>
-                        </div>
+                  {/* Clean split diff */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 rounded-[10px] hairline overflow-hidden divide-y sm:divide-y-0 sm:divide-x divide-[var(--line)]">
+                    <div className="px-4 py-3 bg-[var(--red-bg)]">
+                      <div className="type-label text-[10px]">
+                        AI · {Math.round(task.minConfidence * 100)}%
                       </div>
-
-                      <div className="text-xs text-[#5C574E] leading-relaxed">
-                        Context: “{task.contextBefore}{" "}
-                        <strong className="text-[#141311]">
-                          {task.submittedText || task.aiGuess}
-                        </strong>{" "}
-                        {task.contextAfter}”
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-3 text-xs">
-                        <button
-                          type="button"
-                          onClick={() => playExcerpt(task)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[5px] bg-[#141311] text-[#FBF9F4] font-medium hover:bg-[#2B2926] cursor-pointer"
-                        >
-                          {playingId === task.id ? (
-                            <>
-                              <Pause className="w-3.5 h-3.5" /> Pause excerpt
-                            </>
-                          ) : (
-                            <>
-                              <Play className="w-3.5 h-3.5 fill-current" /> Hear excerpt
-                            </>
-                          )}
-                        </button>
-                        <span className="text-[#5C574E]">
-                          Editor pays 0 tQDAY · Payout settles once
-                        </span>
+                      <div className="text-sm font-medium text-[var(--ink)] line-through mt-0.5">
+                        {task.aiGuess}
                       </div>
                     </div>
-
-                    <div className="flex flex-wrap lg:flex-col gap-2 shrink-0 lg:w-48">
-                      <button
-                        type="button"
-                        disabled={busyId === task.id}
-                        onClick={() => handleAction(task, "accept")}
-                        className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-[5px] text-xs font-semibold bg-[#1B6B46] text-[#FBF9F4] hover:bg-[#145537] transition-colors disabled:opacity-50 cursor-pointer"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        Accept & Pay {task.feeTusd8.toFixed(2)}
-                      </button>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          disabled={busyId === task.id}
-                          onClick={() => handleAction(task, "reject")}
-                          className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-2 rounded-[5px] text-xs font-medium bg-[#FBF9F4] border border-[#DDD7CA] text-[#C94A22] hover:bg-[#FAEAE4] transition-colors disabled:opacity-50 cursor-pointer"
-                        >
-                          <XCircle className="w-3.5 h-3.5" /> Reject
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busyId === task.id}
-                          onClick={() => handleAction(task, "expire")}
-                          title="Simulate task expiry returning fee to batch budget"
-                          className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-2 rounded-[5px] text-xs font-medium bg-[#FBF9F4] border border-[#DDD7CA] text-[#5C574E] hover:text-[#141311] transition-colors disabled:opacity-50 cursor-pointer"
-                        >
-                          <Clock className="w-3.5 h-3.5" /> Expire
-                        </button>
+                    <div className="px-4 py-3 bg-[var(--green-bg)]">
+                      <div className="type-label text-[10px]">Editor</div>
+                      <div className="text-sm font-semibold text-[var(--ink)] mt-0.5">
+                        {task.submittedText || task.aiGuess}
                       </div>
                     </div>
                   </div>
+
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--mute)]">
+                    <button
+                      type="button"
+                      onClick={() => playExcerpt(task)}
+                      className="min-h-[40px] inline-flex items-center gap-1.5 px-3 rounded-[8px] font-medium bg-[var(--ink)] text-[var(--paper)] cursor-pointer"
+                    >
+                      {playingId === task.id ? (
+                        <>
+                          <Pause className="w-3.5 h-3.5" /> Pause
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-3.5 h-3.5 fill-current" /> Hear excerpt
+                        </>
+                      )}
+                    </button>
+                    <span className="font-mono tabular-nums">
+                      {task.feeTusd8.toFixed(2)} tUSD8
+                    </span>
+                  </div>
                 </div>
-              );
-            })}
+
+                <div className="flex flex-wrap lg:flex-col gap-2 shrink-0 lg:w-44">
+                  <button
+                    type="button"
+                    disabled={busyId === task.id}
+                    onClick={() => handleAction(task, "accept")}
+                    className="flex-1 min-h-[44px] px-4 rounded-[8px] text-xs font-semibold bg-[var(--signal)] text-[#faf8f2] hover:opacity-90 disabled:opacity-50 cursor-pointer"
+                  >
+                    Accept · {task.feeTusd8.toFixed(2)}
+                  </button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      disabled={busyId === task.id}
+                      onClick={() => handleAction(task, "reject")}
+                      className="min-h-[44px] sm:min-h-[38px] px-3 rounded-[8px] text-xs font-medium hairline bg-[var(--paper)] text-[var(--red)] hover:bg-[var(--red-bg)] cursor-pointer"
+                    >
+                      Reject
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busyId === task.id}
+                      onClick={() => handleAction(task, "expire")}
+                      className="min-h-[44px] sm:min-h-[38px] px-3 rounded-[8px] text-xs font-medium hairline bg-[var(--paper)] text-[var(--mute)] hover:text-[var(--ink)] cursor-pointer"
+                    >
+                      Expire
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </section>
 
-      {/* Settled Audit History */}
+      {/* Settled ledger */}
       {settled.length > 0 && (
-        <section className="rounded-[6px] border border-[#DDD7CA] bg-[#FBF9F4] overflow-hidden">
-          <div className="px-5 py-3 border-b border-[#DDD7CA] bg-[#F4F1EA]/70 flex items-center justify-between">
-            <h2 className="text-xs font-mono uppercase tracking-[0.06em] font-semibold text-[#5C574E]">
-              Settled Decisions ({settled.length})
-            </h2>
-            <span className="text-xs text-[#5C574E]">
-              Exact-once settlement per taskId
-            </span>
+        <section className="rounded-[14px] hairline bg-[var(--paper)] overflow-hidden">
+          <div className="px-5 py-3.5 hairline-b flex items-center justify-between">
+            <h2 className="type-label">Settled ({settled.length})</h2>
           </div>
-          <div className="divide-y divide-[#DDD7CA]">
+          <div className="divide-y divide-[var(--line)]">
             {settled.map((t) => (
               <div
                 key={t.id}
-                className="px-5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                className="px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
               >
                 <div className="space-y-0.5">
-                  <div className="font-medium text-[#141311]">
-                    “{t.aiGuess}” → “{t.submittedText || t.aiGuess}” · {t.editorName}
+                  <div className="font-semibold text-[var(--ink)]">
+                    {t.aiGuess} → {t.submittedText || t.aiGuess} · {t.editorName}
                   </div>
-                  <div className="text-[#5C574E] font-mono">
+                  <div className="font-mono text-[var(--mute)]">
                     {t.approvedBy
-                      ? `Approved by ${shortAddr(t.approvedBy)}`
+                      ? `Approved ${shortAddr(t.approvedBy)}`
                       : t.rejectionReason || t.status}
                   </div>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   <span
-                    className={`px-2 py-0.5 rounded-[4px] font-mono font-medium tabular-nums ${
+                    className={`px-2.5 py-0.5 rounded-full font-mono font-medium tabular-nums ${
                       t.status === "accepted"
-                        ? "bg-[#E7F4ED] text-[#1B6B46]"
-                        : "bg-[#EBE6DB] text-[#5C574E]"
+                        ? "bg-[var(--green-bg)] text-[var(--green)]"
+                        : "bg-[var(--panel)] text-[var(--mute)]"
                     }`}
                   >
                     {t.status === "accepted"
-                      ? `Paid ${t.feeTusd8.toFixed(2)} tUSD8`
-                      : `Refunded ${t.feeTusd8.toFixed(2)} tUSD8`}
+                      ? `Paid ${t.feeTusd8.toFixed(2)}`
+                      : `Refunded ${t.feeTusd8.toFixed(2)}`}
                   </span>
                   {t.settleTxHash && (
                     <a
                       href={explorerTxUrl(t.settleTxHash)}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-1 font-mono text-[#5C574E] hover:text-[#141311]"
+                      className="inline-flex items-center gap-1 font-mono text-[var(--mute)] hover:text-[var(--ink)]"
                     >
                       {t.settleTxHash.slice(0, 10)}…
                       <ExternalLink className="w-3 h-3" />
