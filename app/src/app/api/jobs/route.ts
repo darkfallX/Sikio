@@ -1,25 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  buildCustomTranscript,
-  buildShowcaseTranscript,
-  getClipSpec,
-} from "@/lib/clips";
+import { getClipSpec } from "@/lib/clips";
 import {
   createJobAndReserveTasks,
   getAvailableBudget,
   readState,
 } from "@/lib/store";
-import { buildX402Challenge, encodeX402Header } from "@/lib/x402";
-import { ExecutionMode } from "@/lib/types";
+import { findUploadedClip } from "@/lib/storage";
+import { encodeX402Header, X402PaymentChallenge } from "@/lib/x402";
+import { CaptionWord, ExecutionMode } from "@/lib/types";
+import { POST as transcribePost } from "../transcribe/route";
 
 export const runtime = "nodejs";
 
 /**
  * Runs the Sikio Agent end-to-end for a clip:
- * 1. Requests /api/transcribe -> receives HTTP 402 Payment Required challenge (x402)
- * 2. Pays 0.04 tUSD8 inside the approved batch budget (or uses wallet txHash in live mode)
- * 3. Re-calls transcription with X-PAYMENT proof -> receives 200 OK timed word probabilities
- * 4. Flags uncertain words below confidenceThreshold & locks ReviewEscrow fees per task
+ * 1. Calls /api/transcribe with no payment header -> receives HTTP 402 Payment Required challenge (x402)
+ * 2. Settles 0.04 tUSD8 inside the approved batch budget (or uses live wallet txHash)
+ * 3. Re-calls /api/transcribe with X-PAYMENT proof -> receives 200 OK timed word probabilities
+ * 4. Flags uncertain words below confidenceThreshold & reserves fees per task
  */
 export async function POST(req: NextRequest) {
   try {
@@ -37,78 +35,114 @@ export async function POST(req: NextRequest) {
     };
 
     const threshold =
-      typeof body.confidenceThreshold === "number"
+      typeof body.confidenceThreshold === "number" &&
+      Number.isFinite(body.confidenceThreshold)
         ? Math.min(0.95, Math.max(0.45, body.confidenceThreshold))
         : 0.78;
     const feePerTask =
-      typeof body.feePerTaskTusd8 === "number"
+      typeof body.feePerTaskTusd8 === "number" &&
+      Number.isFinite(body.feePerTaskTusd8)
         ? Math.max(0.05, Number(body.feePerTaskTusd8.toFixed(2)))
-        : 0.25;
+        : 0.1;
 
     const inferenceCostTusd8 = 0.04;
     const requestId = `x402-${Date.now().toString(36)}`;
     const state = readState();
-    const mode: ExecutionMode = body.mode || state.batch.mode;
+    const effectiveMode: ExecutionMode =
+      body.x402TxHash && body.mode === "aevum-live" ? "aevum-live" : "sandbox";
 
-    // Step 1: Build authentic x402 challenge (mirrors GET/POST -> 402 Payment Required)
-    const challenge = buildX402Challenge({
+    const transcribePayload = {
+      clipId: body.clipId,
       requestId,
-      amountTusd8: inferenceCostTusd8,
-      resource: "/api/transcribe",
-    });
+      confidenceThreshold: threshold,
+      customDurationSeconds: body.customDurationSeconds,
+      customTranscript: body.customTranscript,
+    };
 
-    // Step 2: Execute real x402 payment header proof
+    // Step 1: Real unpaid request to /api/transcribe -> HTTP 402 challenge
+    const step1Req = new NextRequest("http://sikio.local/api/transcribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(transcribePayload),
+    });
+    const step1Res = await transcribePost(step1Req);
+    if (step1Res.status !== 402) {
+      return NextResponse.json(
+        { error: `Expected x402 HTTP 402 challenge, got ${step1Res.status}` },
+        { status: 500 }
+      );
+    }
+    const step1Json = (await step1Res.json()) as {
+      challenge: X402PaymentChallenge;
+    };
+    const challenge = step1Json.challenge;
+
+    // Step 2: Construct authentic X-PAYMENT proof
+    const x402TxHash: `0x${string}` =
+      body.x402TxHash ||
+      (`0x${Buffer.from(`${requestId}:${Date.now()}`)
+        .toString("hex")
+        .padEnd(64, "a")
+        .slice(0, 64)}` as `0x${string}`);
+
     const paymentHeader = encodeX402Header({
       x402Version: 1,
       network: "eip155:44005",
-      requestId,
-      txHash:
-        body.x402TxHash ||
-        (`0x${Buffer.from(`${requestId}:${Date.now()}`)
-          .toString("hex")
-          .padEnd(64, "a")
-          .slice(0, 64)}` as `0x${string}`),
+      requestId: challenge.requestId,
+      txHash: x402TxHash,
       payer: state.batch.agentAddress,
       amountBaseUnits: challenge.maxAmountRequired,
-      mode,
+      mode: effectiveMode,
     });
 
-    // Step 3: Transcribe (showcase WAV or custom upload)
-    const spec = body.clipId ? getClipSpec(body.clipId) : undefined;
-    let durationSeconds = 15;
-    let words;
-    let title = body.customTitle?.trim() || "Custom Studio Clip";
-    let sourceLabel = "Agency Uploaded Media · Custom Clip";
-    let languageTag = body.customLanguageTag?.trim() || "en-AF";
-    let audioUrl = body.customAudioUrl || "/clips/lagos-fintech-ep14.wav";
-    let preferredCity: string | undefined;
-    let clipId = body.clipId || `custom-${Date.now().toString(36)}`;
-    let isCustomUpload = true;
-    let engine = "Sikio Local ASR Engine (self-hosted x402 endpoint)";
-
-    if (spec) {
-      const res = buildShowcaseTranscript(spec.id, threshold);
-      durationSeconds = res.durationSeconds;
-      words = res.words;
-      title = spec.title;
-      sourceLabel = spec.sourceLabel;
-      languageTag = spec.languageTag;
-      audioUrl = spec.audioUrl;
-      preferredCity = spec.recommendedEditorCity;
-      clipId = spec.id;
-      isCustomUpload = false;
-      engine = "Sikio AfriSpeech-calibrated ASR (self-hosted x402 endpoint)";
-    } else {
-      durationSeconds = Math.max(
-        3,
-        Math.min(600, Number(body.customDurationSeconds || 15))
+    // Step 3: Paid retry to /api/transcribe -> HTTP 200 OK timed transcript
+    const step2Req = new NextRequest("http://sikio.local/api/transcribe", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-PAYMENT": paymentHeader,
+      },
+      body: JSON.stringify(transcribePayload),
+    });
+    const step2Res = await transcribePost(step2Req);
+    const step2Json = (await step2Res.json()) as {
+      ok?: boolean;
+      error?: string;
+      engine?: string;
+      durationSeconds?: number;
+      words?: CaptionWord[];
+    };
+    if (!step2Res.ok || !step2Json.words) {
+      return NextResponse.json(
+        { error: step2Json.error || "Paid x402 retry failed." },
+        { status: step2Res.status === 402 ? 402 : 400 }
       );
-      words = buildCustomTranscript({
-        durationSeconds,
-        rawTranscript: body.customTranscript,
-        confidenceThreshold: threshold,
-      });
     }
+
+    const spec = body.clipId ? getClipSpec(body.clipId) : undefined;
+    const uploaded = !spec && body.clipId ? findUploadedClip(body.clipId) : null;
+
+    const clipId = spec
+      ? spec.id
+      : uploaded
+      ? uploaded.meta.clipId
+      : body.clipId || `custom-${Date.now().toString(36)}`;
+    const title = spec
+      ? spec.title
+      : body.customTitle?.trim() || uploaded?.meta.fileName || "Uploaded Studio Clip";
+    const sourceLabel = spec
+      ? spec.sourceLabel
+      : "Agency Uploaded Media · Persistent Session Clip";
+    const languageTag = spec
+      ? spec.languageTag
+      : body.customLanguageTag?.trim() || "en-AF";
+    const audioUrl = spec
+      ? spec.audioUrl
+      : uploaded
+      ? `/api/media/${uploaded.meta.clipId}`
+      : body.customAudioUrl || "/clips/lagos-fintech-ep14.wav";
+    const preferredCity = spec?.recommendedEditorCity;
+    const isCustomUpload = !spec;
 
     const result = createJobAndReserveTasks({
       clipId,
@@ -116,17 +150,18 @@ export async function POST(req: NextRequest) {
       sourceLabel,
       languageTag,
       audioUrl,
-      durationSeconds,
+      durationSeconds: step2Json.durationSeconds || 15,
       confidenceThreshold: threshold,
       feePerTaskTusd8: feePerTask,
       inferenceCostTusd8,
-      transcriptionEngine: engine,
-      x402RequestId: requestId,
+      transcriptionEngine:
+        step2Json.engine || "Sikio Local ASR Engine (self-hosted x402)",
+      x402RequestId: challenge.requestId,
       x402TxHash: body.x402TxHash,
-      words,
+      words: step2Json.words,
       preferredCity,
       isCustomUpload,
-      mode,
+      mode: effectiveMode,
     });
 
     return NextResponse.json({
