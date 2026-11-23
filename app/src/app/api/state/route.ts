@@ -18,6 +18,7 @@ export async function GET() {
     showcaseClips: SHOWCASE_CLIPS.map((c) => ({
       id: c.id,
       title: c.title,
+      shortLabel: c.shortLabel,
       sourceLabel: c.sourceLabel,
       languageTag: c.languageTag,
       city: c.city,
@@ -55,6 +56,30 @@ export async function POST(req: NextRequest) {
         state: fresh,
         availableBudgetTusd8: getAvailableBudget(fresh.batch),
       });
+    }
+
+    if (
+      body.maxBudgetTusd8 !== undefined &&
+      (!Number.isFinite(body.maxBudgetTusd8) ||
+        body.maxBudgetTusd8 < 0.5 ||
+        body.maxBudgetTusd8 > 10000)
+    ) {
+      return NextResponse.json(
+        { error: "maxBudgetTusd8 must be between 0.50 and 10000." },
+        { status: 400 }
+      );
+    }
+
+    if (
+      body.maxTaskFeeTusd8 !== undefined &&
+      (!Number.isFinite(body.maxTaskFeeTusd8) ||
+        body.maxTaskFeeTusd8 < 0.05 ||
+        body.maxTaskFeeTusd8 > 50)
+    ) {
+      return NextResponse.json(
+        { error: "maxTaskFeeTusd8 must be between 0.05 and 50." },
+        { status: 400 }
+      );
     }
 
     const updated = updateBatchPolicy({
