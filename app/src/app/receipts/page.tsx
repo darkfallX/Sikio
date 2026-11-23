@@ -141,7 +141,7 @@ export default function ReceiptsPage() {
       <section className="space-y-2 sikio-rise">
         <h1 className="type-page text-[var(--ink)]">Receipts</h1>
         <p className="text-[16px] text-[var(--ink-2)]">
-          Reconciled session ledger, verified QDay Aevum 44005 transactions, contract rules, and pilot A/B timings.
+          Every payment in this session, the live transactions on QDay Aevum, the contract rules, and our review timings.
         </p>
       </section>
 
@@ -150,7 +150,7 @@ export default function ReceiptsPage() {
         <div className="px-5 py-3.5 hairline-b bg-[var(--bg)]/45 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <h2 className="type-label">
-              Active session ledger ({data.receipts.length})
+              This session ({data.receipts.length})
             </h2>
             <span className="px-2 py-0.5 rounded-full bg-[var(--panel)] text-[var(--mute)] font-mono text-[10px]">
               Reconciled
@@ -324,9 +324,9 @@ export default function ReceiptsPage() {
           <button
             type="button"
             onClick={testDoublePayProtection}
-            className="min-h-[44px] sm:min-h-[38px] px-4 rounded-[8px] text-xs font-semibold bg-[var(--signal)] text-[#fbf8f1] hover:opacity-90 cursor-pointer"
+            className="min-h-[44px] sm:min-h-[40px] px-4 rounded-[var(--r-sm)] text-sm font-semibold bg-[var(--ink)] text-[var(--paper)] hover:opacity-90 cursor-pointer"
           >
-            Test double-pay block
+            Try to pay twice
           </button>
         </div>
 
@@ -631,8 +631,8 @@ function ReceiptBadge({
   const map: Record<PaymentReceipt["kind"], { label: string; cls: string }> = {
     batch_funded: { label: "Funded", cls: "bg-[var(--panel)] text-[var(--ink)]" },
     x402_inference: { label: "x402 AI", cls: "bg-[var(--ink)] text-[var(--paper)]" },
-    task_reserved: { label: "Escrowed", cls: "bg-[var(--amber-bg)] text-[var(--amber)]" },
-    editor_payout: { label: "Paid once", cls: "bg-[var(--green-bg)] text-[var(--green)]" },
+    task_reserved: { label: "Held", cls: "bg-[var(--signal-bg)] text-[var(--signal-ink)]" },
+    editor_payout: { label: "Paid once", cls: "bg-[var(--green-bg)] text-[var(--green-ink)]" },
     task_refund: { label: "Refunded", cls: "bg-[var(--red-bg)] text-[var(--red)]" },
   };
   const item = map[kind];
