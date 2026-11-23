@@ -3,8 +3,8 @@
  * Verifies:
  * 1. All public routes & SEO files (/ , /ear, /approve, /receipts, /legal/terms, /legal/privacy, /sitemap.xml, /robots.txt)
  * 2. Real HTTP 402 Payment Required (x402) handshake on /api/transcribe
- * 3. Byte-level WAV excerpt slicing confidentiality on /api/excerpt/[clipId]
- * 4. Full payment lifecycle: reset -> run agent -> submit fix -> accept once -> reject double-pay -> reject refund -> SRT/VTT export -> reset
+ * 3. Byte-level WAV excerpt slicing confidentiality + NaN rejection on /api/excerpt/[clipId]
+ * 4. Strict submit-before-accept guard, exact-once double-pay block, refund, reconciled ledger, and SRT/VTT export
  */
 
 const BASE = process.env.SIKIO_BASE_URL || "http://127.0.0.1:3000";
@@ -35,7 +35,7 @@ async function run() {
     const text = await res.text();
     assert(text.length > 50, `Route ${r} returned empty body`);
   }
-  console.log("✓ All 8 pages & SEO routes returned HTTP 200");
+  console.log("All 8 pages & SEO routes returned HTTP 200");
 
   // 2. Real HTTP 402 Payment Required (x402)
   const res402 = await fetch(`${BASE}/api/transcribe`, {
@@ -75,9 +75,9 @@ async function run() {
   assert(res200.status === 200, `Expected HTTP 200 on paid retry, got ${res200.status}`);
   const body200 = await res200.json();
   assert(body200.words?.length === 43, `Expected 43 timed words, got ${body200.words?.length}`);
-  console.log("✓ Real HTTP 402 -> X-PAYMENT -> HTTP 200 x402 handshake verified");
+  console.log("Real HTTP 402 -> X-PAYMENT -> HTTP 200 x402 handshake verified");
 
-  // 3. Byte-level WAV Excerpt Confidentiality Slicer
+  // 3. Byte-level WAV Excerpt Confidentiality Slicer + NaN Validation
   const fullWav = await fetch(`${BASE}/clips/lagos-fintech-ep14.wav`);
   const fullBuf = Buffer.from(await fullWav.arrayBuffer());
   const excerptRes = await fetch(
@@ -94,11 +94,14 @@ async function run() {
     excerptBuf.length < fullBuf.length * 0.35,
     `Excerpt size (${excerptBuf.length}) should be far smaller than full WAV (${fullBuf.length})`
   );
+
+  const nanRes = await fetch(`${BASE}/api/excerpt/lagos-fintech-ep14?start=NaN&end=8`);
+  assert(nanRes.status === 400, `Expected HTTP 400 for NaN start, got ${nanRes.status}`);
   console.log(
-    `✓ Byte-level WAV excerpt verified (${excerptBuf.length} bytes vs full ${fullBuf.length} bytes)`
+    `Byte-level WAV excerpt (${excerptBuf.length}B vs ${fullBuf.length}B) and NaN rejection verified`
   );
 
-  // 4. Full End-to-End Job -> Editor -> Approver -> Double-Pay Block -> Refund -> SRT/VTT Export
+  // 4. Full End-to-End Job -> Guard -> Editor -> Approver -> Double-Pay Block -> Refund -> Reconciled Ledger -> Export
   await fetch(`${BASE}/api/state`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -111,7 +114,7 @@ async function run() {
     body: JSON.stringify({
       clipId: "lagos-fintech-ep14",
       confidenceThreshold: 0.78,
-      feePerTaskTusd8: 0.25,
+      feePerTaskTusd8: 0.1,
     }),
   });
   assert(jobRes.status === 200, `Job creation failed: ${jobRes.status}`);
@@ -121,6 +124,17 @@ async function run() {
     t.aiGuess.toLowerCase().includes("pay stark")
   );
   assert(paystackTask, "Expected 'Pay stark' flagged task");
+
+  // Unsubmitted offered task CANNOT be accepted directly
+  const premAcceptRes = await fetch(`${BASE}/api/tasks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "accept", taskId: paystackTask.id }),
+  });
+  assert(
+    premAcceptRes.status === 400,
+    `Unsubmitted task accept should return 400, got ${premAcceptRes.status}`
+  );
 
   // Editor submits fix (zero gas)
   const submitRes = await fetch(`${BASE}/api/tasks`, {
@@ -160,10 +174,27 @@ async function run() {
     body: JSON.stringify({ action: "reject", taskId: otherTask.id }),
   });
   assert(rejectRes.status === 200, "Reject failed");
-  const availAfterReject = (await rejectRes.json()).availableBudgetTusd8;
+  const rejectJson = await rejectRes.json();
   assert(
-    Number((availAfterReject - availBeforeReject).toFixed(2)) === 0.25,
-    `Expected +0.25 refund on reject, got ${availAfterReject - availBeforeReject}`
+    Number((rejectJson.availableBudgetTusd8 - availBeforeReject).toFixed(2)) === 0.1,
+    `Expected +0.10 refund on reject, got ${rejectJson.availableBudgetTusd8 - availBeforeReject}`
+  );
+
+  // Ledger reconciliation check
+  const curState = await (await fetch(`${BASE}/api/state`)).json();
+  const activeEscrowedSum = curState.receipts
+    .filter((r) => r.kind === "task_reserved" && r.settlementState === "active")
+    .reduce((acc, r) => acc + r.amountTusd8, 0);
+  const settledSum = curState.receipts
+    .filter((r) => r.kind === "x402_inference" || r.kind === "editor_payout")
+    .reduce((acc, r) => acc + r.amountTusd8, 0);
+  assert(
+    Math.abs(activeEscrowedSum - curState.batch.reservedTusd8) < 0.001,
+    `Escrowed mismatch: ${activeEscrowedSum} vs ${curState.batch.reservedTusd8}`
+  );
+  assert(
+    Math.abs(settledSum - curState.batch.spentTusd8) < 0.001,
+    `Settled mismatch: ${settledSum} vs ${curState.batch.spentTusd8}`
   );
 
   // Verify SRT & VTT exports contain merged "Paystack" and not "Pay stark"
@@ -175,7 +206,7 @@ async function run() {
   ).text();
   assert(srt.includes("Paystack") && !srt.includes("Pay stark"), "SRT missing merged fix");
   assert(vtt.startsWith("WEBVTT") && vtt.includes("Paystack"), "VTT missing merged fix");
-  console.log("✓ End-to-end payment, exact-once guard, refund, and SRT/VTT export verified");
+  console.log("End-to-end payment, exact-once guard, refund, reconciliation, and export verified");
 
   // Reset to clean state for demo
   await fetch(`${BASE}/api/state`, {
