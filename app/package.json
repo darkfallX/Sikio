@@ -2,7 +2,7 @@
   "name": "sikio",
   "version": "1.0.0",
   "private": true,
-  "description": "Sikio — AI captions for African voices with budget-bounded tUSD8 human micro-reviews on QDay Aevum",
+  "description": "Sikio: AI captions for African voices with budget-bounded tUSD8 human micro-reviews on QDay Aevum",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "lucide-react": "^0.469.0",
-    "next": "15.1.6",
+    "next": "15.5.12",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "viem": "^2.22.14"
@@ -23,6 +23,8 @@
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "15.5.12",
     "tailwindcss": "^4.0.9",
     "typescript": "^5.7.2",
     "vitest": "^3.0.4"
