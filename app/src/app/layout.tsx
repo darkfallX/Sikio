@@ -1,10 +1,18 @@
 import type { Metadata } from "next";
-import { Outfit, JetBrains_Mono, VT323 } from "next/font/google";
+import { Fraunces, Outfit, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { WalletProvider } from "@/components/WalletContext";
 import { TopNav } from "@/components/TopNav";
 import { AEVUM_CONFIG, explorerAddressUrl, shortAddr } from "@/lib/aevum";
 import Link from "next/link";
+
+const fraunces = Fraunces({
+  subsets: ["latin"],
+  variable: "--font-fraunces",
+  display: "swap",
+  weight: ["500", "600", "700"],
+  style: ["normal", "italic"],
+});
 
 const outfit = Outfit({
   subsets: ["latin"],
@@ -18,13 +26,6 @@ const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
   display: "swap",
   weight: ["400", "500", "600"],
-});
-
-const vt323 = VT323({
-  subsets: ["latin"],
-  variable: "--font-vt323",
-  display: "swap",
-  weight: ["400"],
 });
 
 export const metadata: Metadata = {
@@ -66,7 +67,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${outfit.variable} ${jetbrainsMono.variable} ${vt323.variable}`}
+      className={`${fraunces.variable} ${outfit.variable} ${jetbrainsMono.variable}`}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
@@ -74,13 +75,15 @@ export default function RootLayout({
       <body className="min-h-screen flex flex-col bg-[var(--bg)] text-[var(--ink)]">
         <WalletProvider>
           <TopNav />
-          <main className="flex-1 w-full max-w-[1240px] mx-auto px-4 sm:px-7 py-8 sm:py-12">
+          <main className="flex-1 w-full max-w-[1240px] mx-auto px-4 sm:px-7 py-6 sm:py-9">
             {children}
           </main>
-          <footer className="hairline-t bg-[var(--paper)] mt-24">
-            <div className="max-w-[1240px] mx-auto px-4 sm:px-7 py-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-[var(--mute)]">
+          <footer className="hairline-t bg-[var(--paper)] mt-16">
+            <div className="max-w-[1240px] mx-auto px-4 sm:px-7 py-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-[var(--mute)]">
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                <span className="font-semibold text-[var(--ink)]">Sikio</span>
+                <span className="font-editorial font-bold text-[var(--ink)]">
+                  Sikio
+                </span>
                 <span className="font-mono tabular-nums">Aevum testnet · 44005</span>
                 <a
                   href={explorerAddressUrl(AEVUM_CONFIG.reviewEscrowAddress)}
@@ -93,17 +96,17 @@ export default function RootLayout({
                 <span className="font-mono">tUSD8</span>
               </div>
               <div className="flex items-center gap-5">
-                <Link href="/legal/terms" className="hover:text-[var(--ink)]">
+                <Link href="/legal/terms" className="hover:text-[var(--ink)] py-1">
                   Terms
                 </Link>
-                <Link href="/legal/privacy" className="hover:text-[var(--ink)]">
+                <Link href="/legal/privacy" className="hover:text-[var(--ink)] py-1">
                   Privacy
                 </Link>
                 <a
                   href="https://explorer-test.qday.info"
                   target="_blank"
                   rel="noreferrer"
-                  className="hover:text-[var(--ink)]"
+                  className="hover:text-[var(--ink)] py-1"
                 >
                   Explorer
                 </a>
@@ -111,7 +114,7 @@ export default function RootLayout({
                   href="https://faucet.qday.info/en"
                   target="_blank"
                   rel="noreferrer"
-                  className="hover:text-[var(--ink)]"
+                  className="hover:text-[var(--ink)] py-1"
                 >
                   Faucet
                 </a>
