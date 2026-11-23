@@ -37,16 +37,16 @@ interface PaletteCache {
 }
 
 const DEFAULT_PALETTE: PaletteCache = {
-  ink: "#171410",
-  mute: "#6b6355",
-  line: "#d4cbb9",
-  signal: "#c9461d",
-  signalBg: "rgba(201, 70, 29, 0.11)",
-  green: "#196b45",
-  greenBg: "rgba(25, 107, 69, 0.11)",
-  amber: "#9c6200",
-  amberBg: "rgba(196, 134, 18, 0.14)",
-  paper: "#fbf8f1",
+  ink: "#15201b",
+  mute: "#5a6962",
+  line: "#d2d9d4",
+  signal: "#b45f06",
+  signalBg: "#fbecd6",
+  green: "#1d7a3e",
+  greenBg: "#dcefe2",
+  amber: "#2f62c9",
+  amberBg: "#e3ebfa",
+  paper: "#ffffff",
 };
 
 const SAMPLE_COUNT = 120;
@@ -116,8 +116,8 @@ function readPaletteFromRoot(): PaletteCache {
     signalBg: cs.getPropertyValue("--signal-bg").trim() || DEFAULT_PALETTE.signalBg,
     green: cs.getPropertyValue("--green").trim() || DEFAULT_PALETTE.green,
     greenBg: cs.getPropertyValue("--green-bg").trim() || DEFAULT_PALETTE.greenBg,
-    amber: cs.getPropertyValue("--amber").trim() || DEFAULT_PALETTE.amber,
-    amberBg: cs.getPropertyValue("--amber-bg").trim() || DEFAULT_PALETTE.amberBg,
+    amber: cs.getPropertyValue("--heard").trim() || DEFAULT_PALETTE.amber,
+    amberBg: cs.getPropertyValue("--heard-bg").trim() || DEFAULT_PALETTE.amberBg,
     paper: cs.getPropertyValue("--paper").trim() || DEFAULT_PALETTE.paper,
   };
 }
