@@ -1,61 +1,94 @@
 @import "tailwindcss";
 
+/*
+  Sikio design system: Lifecycle board (Studio) + Voice-note thread (Ear).
+  Sage desk, white cards, deep green-black ink. Colour only encodes state:
+  flagged (ochre), heard (blue), paid once (green), returned (grey), warning (amber), error (red).
+*/
 :root {
-  --bg: #efe9dc;
-  --paper: #fbf8f1;
-  --panel: #e6dfd0;
-  --ink: #171410;
-  --ink-2: #3f3930;
-  --mute: #6b6355;
-  --line: #d4cbb9;
-  --line-soft: #e4ddd0;
-  --hover: rgba(23, 20, 16, 0.042);
-  --signal: #c9461d;
-  --signal-ink: #a63612;
-  --signal-bg: rgba(201, 70, 29, 0.11);
-  --green: #196b45;
-  --green-bg: rgba(25, 107, 69, 0.11);
-  --red: #b93227;
-  --red-bg: rgba(185, 50, 39, 0.1);
-  --amber: #9c6200;
-  --amber-bg: rgba(196, 134, 18, 0.14);
-  --header-bg: rgba(239, 233, 220, 0.88);
-  --hero-shadow: 0 22px 46px -26px rgba(23, 20, 16, 0.22);
+  --bg: #e7ebe8;
+  --paper: #ffffff;
+  --panel: #dfe5e1;
+  --ink: #15201b;
+  --ink-2: #3a4943;
+  --mute: #5a6962;
+  --line: #d2d9d4;
+  --line-soft: #e6ebe8;
+  --hover: rgba(21, 32, 27, 0.045);
+
+  /* State: flagged, waiting for a native ear */
+  --signal: #b45f06;
+  --signal-ink: #8c4a03;
+  --signal-bg: #fbecd6;
+  /* State: heard, waiting for approval */
+  --heard: #2f62c9;
+  --heard-ink: #234ea3;
+  --heard-bg: #e3ebfa;
+  /* State: paid once */
+  --green: #1d7a3e;
+  --green-ink: #155f30;
+  --green-bg: #dcefe2;
+  /* Money held in escrow and warnings */
+  --amber: #9a6200;
+  --amber-bg: #f6ecd2;
+  --red: #b42d22;
+  --red-bg: #f8e1de;
+
+  /* Ear thread */
+  --thread: #dde6e0;
+  --bubble-in: #ffffff;
+  --bubble-out: #0f6b54;
+  --bubble-out-ink: #ffffff;
+
+  --header-bg: rgba(231, 235, 232, 0.9);
+  --hero-shadow: 0 18px 40px -28px rgba(21, 32, 27, 0.28);
   --ease: cubic-bezier(0.25, 1, 0.5, 1);
   --fast: 0.18s;
   --base: 0.3s;
-  --enter: 0.72s;
-  --r: 12px;
+  --enter: 0.6s;
+  --r: 10px;
   --r-sm: 8px;
+  color-scheme: light;
 }
 
 [data-theme="dark"] {
-  --bg: #12100e;
-  --paper: #1a1714;
-  --panel: #23201b;
-  --ink: #f1ece2;
-  --ink-2: #cfc8ba;
-  --mute: #948b7c;
-  --line: #342f28;
-  --line-soft: #26221c;
-  --hover: rgba(241, 236, 226, 0.055);
-  --signal: #e8663c;
-  --signal-ink: #ff855c;
-  --signal-bg: rgba(232, 102, 60, 0.16);
-  --green: #38b377;
-  --green-bg: rgba(56, 179, 119, 0.15);
-  --red: #ee6052;
-  --red-bg: rgba(238, 96, 82, 0.15);
-  --amber: #e6a938;
-  --amber-bg: rgba(230, 169, 56, 0.16);
-  --header-bg: rgba(18, 16, 14, 0.88);
-  --hero-shadow: 0 24px 52px -22px rgba(0, 0, 0, 0.68);
+  --bg: #0e1311;
+  --paper: #161d1a;
+  --panel: #1f2824;
+  --ink: #e6ede9;
+  --ink-2: #bac6c0;
+  --mute: #8b9992;
+  --line: #28332e;
+  --line-soft: #1d2622;
+  --hover: rgba(230, 237, 233, 0.05);
+
+  --signal: #e29a3f;
+  --signal-ink: #f0b56a;
+  --signal-bg: rgba(226, 154, 63, 0.16);
+  --heard: #77a2f2;
+  --heard-ink: #9dbcf7;
+  --heard-bg: rgba(119, 162, 242, 0.16);
+  --green: #4cc27a;
+  --green-ink: #7dd8a0;
+  --green-bg: rgba(76, 194, 122, 0.15);
+  --amber: #e2ab45;
+  --amber-bg: rgba(226, 171, 69, 0.15);
+  --red: #ef6b5c;
+  --red-bg: rgba(239, 107, 92, 0.15);
+
+  --thread: #121916;
+  --bubble-in: #1f2824;
+  --bubble-out: #1f8a6d;
+  --bubble-out-ink: #ffffff;
+
+  --header-bg: rgba(14, 19, 17, 0.9);
+  --hero-shadow: 0 20px 44px -26px rgba(0, 0, 0, 0.7);
+  color-scheme: dark;
 }
 
 @theme inline {
-  --font-sans: var(--font-outfit), "Outfit", system-ui, sans-serif;
-  --font-editorial: var(--font-fraunces), Georgia, serif;
-  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, monospace;
+  --font-sans: var(--font-hanken), "Hanken Grotesk", system-ui, sans-serif;
+  --font-mono: var(--font-fragment-mono), ui-monospace, SFMono-Regular, monospace;
 }
 
 * {
@@ -71,7 +104,7 @@ html {
 body {
   background-color: var(--bg);
   color: var(--ink);
-  font-family: var(--font-outfit), "Outfit", system-ui, sans-serif;
+  font-family: var(--font-hanken), "Hanken Grotesk", system-ui, sans-serif;
   font-size: 16px;
   line-height: 1.55;
   overflow-x: clip;
@@ -84,112 +117,122 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Legacy alias: display text now uses the same grotesk at heavier weight */
 .font-editorial {
-  font-family: var(--font-fraunces), Georgia, serif;
+  font-family: var(--font-hanken), "Hanken Grotesk", system-ui, sans-serif;
+  font-weight: 800;
 }
 
-/* Type scale utilities */
+/* Type scale */
 .type-display {
-  font-family: var(--font-fraunces), Georgia, serif;
-  font-size: clamp(2.25rem, 4.4vw, 3.65rem);
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  line-height: 1.03;
+  font-size: clamp(1.9rem, 3.6vw, 2.9rem);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.04;
+  text-wrap: balance;
 }
 
 .type-page {
-  font-family: var(--font-fraunces), Georgia, serif;
-  font-size: clamp(1.9rem, 3.4vw, 2.75rem);
-  font-weight: 600;
-  letter-spacing: -0.025em;
-  line-height: 1.06;
+  font-size: clamp(1.7rem, 3vw, 2.3rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.08;
+  text-wrap: balance;
 }
 
 .type-section {
-  font-family: var(--font-fraunces), Georgia, serif;
-  font-size: clamp(1.3rem, 1.9vw, 1.6rem);
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
+  font-size: clamp(1.15rem, 1.6vw, 1.35rem);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
 }
 
 .type-label {
-  font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
   color: var(--mute);
 }
 
-/* Hairline editorial structural rules */
+/* Structure */
 .hairline {
-  border: 0.8px solid var(--line);
+  border: 1px solid var(--line);
 }
 
 .hairline-t {
-  border-top: 0.8px solid var(--line);
+  border-top: 1px solid var(--line);
 }
 
 .hairline-b {
-  border-bottom: 0.8px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 
 .hairline-l {
-  border-left: 0.8px solid var(--line);
+  border-left: 1px solid var(--line);
 }
 
 .hairline-r {
-  border-right: 0.8px solid var(--line);
+  border-right: 1px solid var(--line);
 }
 
+/* Legacy no-op: the heavy top rule was part of the old print look */
 .double-rule {
-  border-top: 2.5px solid var(--ink);
-  border-top-left-radius: 4px !important;
-  border-top-right-radius: 4px !important;
 }
 
 .hero-elevation {
   box-shadow: var(--hero-shadow);
 }
 
-/* Precision range slider */
+/* Column heading rule on the lifecycle board */
+.col-rule {
+  border-bottom: 2px solid currentColor;
+}
+
+/* Range slider: 32px tall hit area, 4px drawn track */
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
-  height: 3px;
-  background: var(--line);
-  border-radius: 999px;
+  height: 32px;
+  background: transparent;
   outline: none;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line);
 }
 
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 22px;
+  height: 22px;
+  margin-top: -9px;
   border-radius: 999px;
   background: var(--ink);
-  border: 2px solid var(--paper);
-  cursor: pointer;
-  transition: background-color var(--fast) var(--ease);
-}
-
-input[type="range"]::-webkit-slider-thumb:hover {
-  background: var(--signal);
+  border: 3px solid var(--paper);
+  box-shadow: 0 0 0 1px var(--line);
 }
 
 input[type="range"]::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
+  width: 22px;
+  height: 22px;
   border-radius: 999px;
   background: var(--ink);
-  border: 2px solid var(--paper);
-  cursor: pointer;
+  border: 3px solid var(--paper);
 }
 
 :focus-visible {
-  outline: 2px solid var(--signal);
+  outline: 2px solid var(--heard);
   outline-offset: 2px;
 }
 
@@ -201,11 +244,11 @@ input[type="range"]::-moz-range-thumb {
   scrollbar-width: none;
 }
 
-/* Editorial Motion Choreography */
+/* Motion: one easing everywhere */
 @keyframes sikio-rise {
   from {
     opacity: 0;
-    transform: translateY(14px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
@@ -215,7 +258,23 @@ input[type="range"]::-moz-range-thumb {
 
 .sikio-rise {
   animation: sikio-rise var(--enter) var(--ease) both;
-  animation-delay: calc(var(--i, 0) * 65ms);
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+/* A card arriving in a new lifecycle column */
+@keyframes sikio-card-in {
+  from {
+    opacity: 0.35;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.sikio-card-in {
+  animation: sikio-card-in 0.55s var(--ease) both;
 }
 
 @keyframes sikio-verdict {
@@ -231,6 +290,23 @@ input[type="range"]::-moz-range-thumb {
 
 .sikio-verdict {
   animation: sikio-verdict 0.5s var(--ease) both;
+}
+
+/* A new message in the Ear thread */
+@keyframes sikio-bubble {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.sikio-bubble {
+  animation: sikio-bubble 0.45s var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 90ms);
 }
 
 @keyframes sikio-check-pop {
@@ -270,7 +346,9 @@ input[type="range"]::-moz-range-thumb {
   .sikio-led,
   .sikio-rise,
   .sikio-verdict,
-  .sikio-check-pop {
+  .sikio-check-pop,
+  .sikio-card-in,
+  .sikio-bubble {
     animation: none;
     opacity: 1;
     transform: none;
