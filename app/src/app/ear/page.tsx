@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link";
 import { Play, Pause, Repeat, Check, Send } from "lucide-react";
 import { BatchBudget, ReviewTask } from "@/lib/types";
+import { OrganicWaveRibbon } from "@/components/OrganicWaveRibbon";
 
 interface EarState {
   batch: BatchBudget;
@@ -24,9 +25,10 @@ export default function EarPage() {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [excerptTime, setExcerptTime] = useState(0);
   const [loopEnabled, setLoopEnabled] = useState(true);
   const [slowMode, setSlowMode] = useState(false);
-  const [lcdStatus, setLcdStatus] = useState("READY · EXCERPT ONLY");
+  const [statusLine, setStatusLine] = useState("Ready · excerpt only");
   const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -52,13 +54,6 @@ export default function EarPage() {
     load();
   }, [load]);
 
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.loop = loopEnabled;
-      audioRef.current.playbackRate = slowMode ? 0.8 : 1.0;
-    }
-  }, [loopEnabled, slowMode]);
-
   const filteredTasks = useMemo(() => {
     if (!state) return [];
     if (selectedEditor === "all") return state.tasks;
@@ -75,7 +70,27 @@ export default function EarPage() {
     [filteredTasks]
   );
 
-  const currentTask = openTasks[Math.min(activeIndex, Math.max(0, openTasks.length - 1))] || null;
+  const currentTask =
+    openTasks[Math.min(activeIndex, Math.max(0, openTasks.length - 1))] || null;
+
+  // Stop & reset excerpt playback immediately when task or editor filter changes (Fixes #14 audio leak)
+  useEffect(() => {
+    const el = audioRef.current;
+    if (el) {
+      el.pause();
+      el.currentTime = 0;
+    }
+    setPlayingId(null);
+    setExcerptTime(0);
+    setStatusLine("Ready · excerpt only");
+  }, [currentTask?.id, selectedEditor]);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.loop = loopEnabled;
+      audioRef.current.playbackRate = slowMode ? 0.8 : 1.0;
+    }
+  }, [loopEnabled, slowMode]);
 
   const earningsPaid = useMemo(
     () =>
@@ -93,30 +108,57 @@ export default function EarPage() {
     [filteredTasks]
   );
 
+  const excerptUrl = useMemo(() => {
+    if (!currentTask) return "";
+    return `/api/excerpt/${currentTask.clipId}?start=${currentTask.start}&end=${currentTask.end}`;
+  }, [currentTask]);
+
+  const excerptDuration = currentTask
+    ? Math.max(0.6, Number((currentTask.end - currentTask.start).toFixed(1)))
+    : 3;
+
+  // Throttled excerpt playhead sync (~15fps)
+  useEffect(() => {
+    if (!playingId) return;
+    let raf = 0;
+    let lastSync = 0;
+    const tick = (now: number) => {
+      if (now - lastSync >= 66) {
+        lastSync = now;
+        if (audioRef.current) {
+          setExcerptTime(audioRef.current.currentTime % Math.max(excerptDuration, 0.5));
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playingId, excerptDuration]);
+
   const playExcerpt = (task: ReviewTask) => {
     const el = audioRef.current;
     if (!el) return;
     if (playingId === task.id) {
       el.pause();
       setPlayingId(null);
-      setLcdStatus("PAUSED");
+      setStatusLine("Paused");
       return;
     }
-    const src = task.clipId.startsWith("custom-")
-      ? "/clips/lagos-fintech-ep14.wav"
-      : `/api/excerpt/${task.clipId}?start=${task.start}&end=${task.end}`;
-    el.src = src;
+    const src = `/api/excerpt/${task.clipId}?start=${task.start}&end=${task.end}`;
+    if (el.src !== new URL(src, window.location.origin).href) {
+      el.src = src;
+    }
     el.loop = loopEnabled;
     el.playbackRate = slowMode ? 0.8 : 1.0;
     el.currentTime = 0;
     el.play()
       .then(() => {
         setPlayingId(task.id);
-        setLcdStatus(
-          `PLAYING ${Math.max(0.5, task.end - task.start).toFixed(1)}S ${slowMode ? "0.8X" : "1.0X"}`
+        setStatusLine(
+          `Playing ${Math.max(0.5, task.end - task.start).toFixed(1)}s excerpt`
         );
       })
-      .catch(() => setError("Tap play again to start audio."));
+      .catch(() => setError("Tap Play again to start excerpt audio."));
   };
 
   const handleSubmit = async (task: ReviewTask, confirmedAiRight: boolean) => {
@@ -147,10 +189,10 @@ export default function EarPage() {
       }
       setActiveIndex(0);
       await load();
-      setLcdStatus(
+      setStatusLine(
         json.task?.status === "accepted"
-          ? `PAID +$${task.feeTusd8.toFixed(2)} TUSD8`
-          : `SENT "${submittedText.toUpperCase()}" · 0 GAS`
+          ? `Paid +$${task.feeTusd8.toFixed(2)} · auto-accepted`
+          : `Sent "${submittedText}" · awaiting approval`
       );
     } finally {
       setSubmittingId(null);
@@ -159,43 +201,51 @@ export default function EarPage() {
 
   if (loading || !state) {
     return (
-      <div className="max-w-xl mx-auto space-y-6">
-        <div className="h-14 w-48 rounded-[14px] bg-[var(--panel)] animate-pulse" />
-        <div className="h-[440px] rounded-[14px] bg-[var(--panel)] animate-pulse" />
+      <div className="max-w-xl mx-auto space-y-5">
+        <div className="h-12 w-48 rounded-[12px] bg-[var(--panel)] animate-pulse" />
+        <div className="h-[420px] rounded-[12px] bg-[var(--panel)] animate-pulse" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-16 sm:space-y-24">
+    <div className="space-y-8 sm:space-y-12">
       <audio
         ref={audioRef}
         onEnded={() => {
           if (!loopEnabled) {
             setPlayingId(null);
-            setLcdStatus("EXCERPT ENDED");
+            setExcerptTime(0);
+            setStatusLine("Excerpt finished");
           }
         }}
       />
 
-      {/* Page heading */}
-      <section className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div className="space-y-2">
+      {/* Compact editorial heading + single-row scrollable mobile filter */}
+      <section className="space-y-3 sikio-rise">
+        <div className="flex items-baseline justify-between gap-4">
           <h1 className="type-page text-[var(--ink)]">Ear</h1>
-          <p className="text-[16px] text-[var(--ink-2)]">
-            Listen to the flagged seconds, type what you hear, earn tUSD8 with zero gas.
-          </p>
+          <div className="font-mono text-xs tabular-nums text-[var(--mute)]">
+            <span className="text-[var(--green)] font-semibold">
+              ${earningsPaid.toFixed(2)}
+            </span>{" "}
+            paid ·{" "}
+            <span className="text-[var(--amber)] font-semibold">
+              ${earningsPending.toFixed(2)}
+            </span>{" "}
+            pending
+          </div>
         </div>
 
-        {/* Editor filter pills */}
-        <div className="flex flex-wrap items-center gap-1.5">
+        {/* Single-row editor filter strip (never wraps an orphan pill onto line 2 at 375px!) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
           <button
             type="button"
             onClick={() => {
               setSelectedEditor("all");
               setActiveIndex(0);
             }}
-            className={`min-h-[44px] sm:min-h-[36px] px-3.5 rounded-full text-xs font-medium hairline cursor-pointer transition-colors ${
+            className={`min-h-[44px] sm:min-h-[36px] px-3.5 rounded-full text-xs font-medium hairline cursor-pointer transition-colors whitespace-nowrap shrink-0 ${
               selectedEditor === "all"
                 ? "bg-[var(--ink)] text-[var(--paper)]"
                 : "bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--hover)]"
@@ -211,7 +261,7 @@ export default function EarPage() {
                 setSelectedEditor(ed.address);
                 setActiveIndex(0);
               }}
-              className={`min-h-[44px] sm:min-h-[36px] px-3.5 rounded-full text-xs font-medium hairline cursor-pointer transition-colors ${
+              className={`min-h-[44px] sm:min-h-[36px] px-3.5 rounded-full text-xs font-medium hairline cursor-pointer transition-colors whitespace-nowrap shrink-0 ${
                 selectedEditor === ed.address
                   ? "bg-[var(--ink)] text-[var(--paper)]"
                   : "bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--hover)]"
@@ -223,94 +273,86 @@ export default function EarPage() {
         </div>
       </section>
 
-      {/* Hero object: tactile handheld Ear device + earnings & queue ledger */}
-      <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left: Handheld Hardware Unit (only soft shadow on page) */}
+      {/* Main 2-column Editorial Proof Card & History */}
+      <section className="grid grid-cols-1 lg:grid-cols-12 gap-7 items-start">
+        {/* Left: Compact Editorial Mobile Proof Unit (all primary actions above the fold on 375x812!) */}
         <div className="lg:col-span-6 flex justify-center lg:justify-start">
-          <div className="w-full max-w-[440px] rounded-[20px] bg-[var(--body)] text-[var(--key-ink)] p-5 sm:p-6 hero-elevation border border-black/30 space-y-5">
-            {/* Hardware speaker grille + ear serial */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
+          <div className="w-full max-w-[460px] rounded-[12px] hairline double-rule bg-[var(--paper)] hero-elevation overflow-hidden">
+            {/* Metadata bar */}
+            <div className="px-4 py-2.5 hairline-b bg-[var(--bg)]/45 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
                 <span
-                  className={`w-2 h-2 rounded-full ${
-                    playingId ? "bg-[var(--signal)] sikio-led" : "bg-[#6c6759]"
+                  className={`w-2 h-2 rounded-full shrink-0 ${
+                    playingId ? "bg-[var(--signal)] sikio-led" : "bg-[var(--mute)]"
                   }`}
                 />
-                <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[#9b9586]">
-                  SIKIO EAR · EXCERPT UNIT
+                <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-[var(--ink-2)] truncate tabular-nums">
+                  {currentTask
+                    ? `Task ${activeIndex + 1}/${openTasks.length} · ${currentTask.editorCity} · ${excerptDuration}s`
+                    : "Queue clear"}
                 </span>
               </div>
-              <span className="font-mono text-[11px] tabular-nums text-[#d5d0c3]">
-                PAID ${earningsPaid.toFixed(2)}
+              <span className="px-2 py-0.5 rounded-full bg-[var(--green-bg)] text-[var(--green)] font-mono text-[11px] font-semibold tabular-nums shrink-0">
+                {currentTask
+                  ? `+$${currentTask.feeTusd8.toFixed(2)}`
+                  : `$${earningsPaid.toFixed(2)} paid`}
               </span>
             </div>
 
-            {/* Olive LCD Screen (VT323 strictly inside phone/handheld LCD) */}
-            <div
-              aria-live="polite"
-              className="rounded-[10px] bg-[var(--lcd)] text-[var(--lcd-ink)] p-4 border-2 border-black/35 space-y-2.5 min-h-[190px] flex flex-col justify-between"
-            >
-              <div className="flex items-center justify-between font-lcd text-[18px] leading-none border-b border-[var(--lcd-dim)] pb-1.5">
-                <span>
-                  {currentTask
-                    ? `TASK ${activeIndex + 1}/${openTasks.length} · ${currentTask.editorCity.toUpperCase()}`
-                    : "QUEUE EMPTY"}
-                </span>
-                <span>
-                  {currentTask
-                    ? `+$${currentTask.feeTusd8.toFixed(2)}`
-                    : `$${earningsPaid.toFixed(2)}`}
-                </span>
-              </div>
-
-              {currentTask ? (
-                <div className="font-lcd text-[23px] leading-[1.15] tracking-[0.01em] py-1">
-                  <span className="opacity-70">{currentTask.contextBefore} </span>
-                  <span className="bg-[var(--lcd-ink)] text-[var(--lcd)] px-1.5">
-                    {currentTask.aiGuess}
-                  </span>
-                  <span className="opacity-70"> {currentTask.contextAfter}</span>
-                </div>
-              ) : (
-                <div className="font-lcd text-[22px] leading-tight py-4">
-                  NO OPEN TASKS. RUN A CLIP IN STUDIO OR CHECK APPROVE.
-                </div>
-              )}
-
-              <div className="flex items-center justify-between font-lcd text-[17px] leading-none border-t border-[var(--lcd-dim)] pt-1.5">
-                <span className="truncate">{lcdStatus}</span>
-                <span>
-                  {currentTask
-                    ? `${Math.max(0.5, currentTask.end - currentTask.start).toFixed(1)}S`
-                    : "0 GAS"}
-                </span>
-              </div>
-            </div>
-
-            {/* Hardware keypad controls */}
             {currentTask ? (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleSubmit(currentTask, false);
-                }}
-                className="space-y-3"
-              >
-                {/* Physical transport keypad row */}
-                <div className="grid grid-cols-3 gap-2">
+              <div className="p-4 space-y-3.5">
+                {/* Silky organic acoustic excerpt ribbon */}
+                <div className="rounded-[10px] hairline bg-[var(--bg)]/55 px-1.5 py-1">
+                  <OrganicWaveRibbon
+                    audioUrl={excerptUrl}
+                    seedKey={currentTask.id}
+                    duration={excerptDuration}
+                    currentTime={excerptTime}
+                    playing={playingId === currentTask.id}
+                    spans={[
+                      {
+                        start: Math.max(
+                          0,
+                          currentTask.focusStart - currentTask.start
+                        ),
+                        end: Math.min(
+                          excerptDuration,
+                          Math.max(
+                            currentTask.focusStart - currentTask.start + 0.35,
+                            currentTask.focusEnd - currentTask.start
+                          )
+                        ),
+                        status: "flagged",
+                      },
+                    ]}
+                    height={56}
+                    onScrub={(sec) => {
+                      if (audioRef.current) {
+                        audioRef.current.currentTime = sec;
+                        setExcerptTime(sec);
+                      }
+                    }}
+                    onTogglePlay={() => playExcerpt(currentTask)}
+                  />
+                </div>
+
+                {/* Compact 3-button transport */}
+                <div className="grid grid-cols-3 gap-1.5">
                   <button
                     type="button"
-                    aria-label={playingId === currentTask.id ? "Pause excerpt" : "Play excerpt"}
+                    aria-label={
+                      playingId === currentTask.id ? "Pause excerpt" : "Play excerpt"
+                    }
                     onClick={() => playExcerpt(currentTask)}
-                    className="min-h-[48px] rounded-[8px] bg-[var(--key)] text-[var(--key-ink)] hover:brightness-110 flex items-center justify-center gap-1.5 text-xs font-semibold cursor-pointer"
+                    className="min-h-[44px] rounded-[8px] bg-[var(--ink)] text-[var(--paper)] hover:opacity-90 flex items-center justify-center gap-1.5 text-xs font-semibold cursor-pointer"
                   >
                     {playingId === currentTask.id ? (
                       <>
-                        <Pause className="w-4 h-4" /> Pause
+                        <Pause className="w-3.5 h-3.5" /> Pause
                       </>
                     ) : (
                       <>
-                        <Play className="w-4 h-4 fill-current" /> Play
+                        <Play className="w-3.5 h-3.5 fill-current" /> Play
                       </>
                     )}
                   </button>
@@ -322,12 +364,12 @@ export default function EarPage() {
                     onClick={() => {
                       const next = !loopEnabled;
                       setLoopEnabled(next);
-                      setLcdStatus(next ? "LOOP ON" : "LOOP OFF");
+                      setStatusLine(next ? "Loop on" : "Loop off");
                     }}
-                    className={`min-h-[48px] rounded-[8px] flex items-center justify-center gap-1.5 font-mono text-xs font-medium cursor-pointer ${
+                    className={`min-h-[44px] rounded-[8px] hairline flex items-center justify-center gap-1.5 font-mono text-xs font-medium cursor-pointer transition-colors ${
                       loopEnabled
-                        ? "bg-[#ecebe4] text-[#12110d]"
-                        : "bg-[var(--key)] text-[var(--key-ink)]"
+                        ? "bg-[var(--panel)] text-[var(--ink)] font-semibold"
+                        : "bg-[var(--paper)] text-[var(--mute)]"
                     }`}
                   >
                     <Repeat className="w-3.5 h-3.5" /> Loop
@@ -340,105 +382,137 @@ export default function EarPage() {
                     onClick={() => {
                       const next = !slowMode;
                       setSlowMode(next);
-                      setLcdStatus(next ? "SPEED 0.8X" : "SPEED 1.0X");
+                      setStatusLine(next ? "Speed 0.8x" : "Speed 1.0x");
                     }}
-                    className={`min-h-[48px] rounded-[8px] font-mono text-xs font-medium cursor-pointer ${
+                    className={`min-h-[44px] rounded-[8px] hairline font-mono text-xs font-medium cursor-pointer transition-colors ${
                       slowMode
-                        ? "bg-[#ecebe4] text-[#12110d]"
-                        : "bg-[var(--key)] text-[var(--key-ink)]"
+                        ? "bg-[var(--signal-bg)] text-[var(--signal-ink)] font-semibold"
+                        : "bg-[var(--paper)] text-[var(--mute)]"
                     }`}
                   >
                     {slowMode ? "0.8x" : "1.0x"}
                   </button>
                 </div>
 
-                {/* Word correction field */}
-                <div>
-                  <label htmlFor="ear-fix-input" className="sr-only">
-                    Type the corrected word
-                  </label>
-                  <input
-                    id="ear-fix-input"
-                    type="text"
-                    value={drafts[currentTask.id] ?? currentTask.aiGuess}
-                    onChange={(e) =>
-                      setDrafts((prev) => ({
-                        ...prev,
-                        [currentTask.id]: e.target.value,
-                      }))
-                    }
-                    placeholder="Type what you hear"
-                    className="w-full min-h-[48px] px-3.5 rounded-[8px] bg-[#141310] border border-white/15 text-[#faf8f2] text-base font-medium"
-                  />
+                {/* Proof sentence context */}
+                <div
+                  aria-live="polite"
+                  className="px-3.5 py-3 rounded-[8px] hairline bg-[var(--bg)]/45 text-[17px] leading-[1.55] text-[var(--ink)]"
+                >
+                  <span className="text-[var(--mute)]">
+                    {currentTask.contextBefore}{" "}
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded-[5px] bg-[var(--signal-bg)] text-[var(--signal-ink)] border-b-2 border-[var(--signal)] font-semibold">
+                    {currentTask.aiGuess}
+                  </span>
+                  <span className="text-[var(--mute)]">
+                    {" "}
+                    {currentTask.contextAfter}
+                  </span>
                 </div>
 
-                {/* Action keys: one signal orange key */}
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="submit"
-                    disabled={submittingId === currentTask.id}
-                    className="min-h-[48px] rounded-[8px] bg-[var(--signal)] text-[#faf8f2] hover:opacity-90 flex items-center justify-center gap-1.5 text-sm font-semibold disabled:opacity-50 cursor-pointer"
-                  >
-                    <Send className="w-4 h-4" />
-                    {submittingId === currentTask.id ? "Sending…" : "Submit fix"}
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={submittingId === currentTask.id}
-                    onClick={() => handleSubmit(currentTask, true)}
-                    className="min-h-[48px] rounded-[8px] bg-[var(--key)] text-[var(--key-ink)] hover:brightness-110 flex items-center justify-center gap-1.5 text-sm font-medium cursor-pointer"
-                  >
-                    <Check className="w-4 h-4" /> AI right
-                  </button>
-                </div>
-
-                {/* Task pager if multiple open */}
-                {openTasks.length > 1 && (
-                  <div className="flex items-center justify-between pt-2 border-t border-white/10 font-mono text-xs">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setActiveIndex((i) => (i - 1 + openTasks.length) % openTasks.length)
+                {/* Form input & Primary Action */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSubmit(currentTask, false);
+                  }}
+                  className="space-y-2.5"
+                >
+                  <div>
+                    <label htmlFor="ear-fix-input" className="sr-only">
+                      Type what you hear
+                    </label>
+                    <input
+                      id="ear-fix-input"
+                      type="text"
+                      value={drafts[currentTask.id] ?? currentTask.aiGuess}
+                      onChange={(e) =>
+                        setDrafts((prev) => ({
+                          ...prev,
+                          [currentTask.id]: e.target.value,
+                        }))
                       }
-                      className="min-h-[40px] px-3 rounded-[8px] bg-[var(--key)] text-[var(--key-ink)] cursor-pointer"
+                      placeholder="Type the exact word or phrase"
+                      className="w-full min-h-[46px] px-3.5 rounded-[8px] hairline bg-[var(--bg)] text-[var(--ink)] text-base font-medium"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="submit"
+                      disabled={submittingId === currentTask.id}
+                      className="min-h-[46px] rounded-[8px] bg-[var(--signal)] text-[#fbf8f1] hover:opacity-90 flex items-center justify-center gap-1.5 text-sm font-semibold disabled:opacity-50 cursor-pointer"
                     >
-                      Prev
+                      <Send className="w-4 h-4" />
+                      {submittingId === currentTask.id
+                        ? "Sending…"
+                        : `Submit · $${currentTask.feeTusd8.toFixed(2)}`}
                     </button>
-                    <span className="text-[#9b9586] tabular-nums">
-                      {activeIndex + 1} / {openTasks.length}
-                    </span>
+
                     <button
                       type="button"
-                      onClick={() =>
-                        setActiveIndex((i) => (i + 1) % openTasks.length)
-                      }
-                      className="min-h-[40px] px-3 rounded-[8px] bg-[var(--key)] text-[var(--key-ink)] cursor-pointer"
+                      disabled={submittingId === currentTask.id}
+                      onClick={() => handleSubmit(currentTask, true)}
+                      className="min-h-[46px] rounded-[8px] hairline bg-[var(--paper)] text-[var(--ink)] hover:bg-[var(--hover)] flex items-center justify-center gap-1.5 text-sm font-medium cursor-pointer"
                     >
-                      Next
+                      <Check className="w-4 h-4" /> AI right
                     </button>
                   </div>
-                )}
-              </form>
+
+                  <div className="flex items-center justify-between pt-1.5 hairline-t font-mono text-[11px] text-[var(--mute)]">
+                    <span className="truncate">{statusLine}</span>
+                    {openTasks.length > 1 && (
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setActiveIndex(
+                              (i) => (i - 1 + openTasks.length) % openTasks.length
+                            )
+                          }
+                          className="min-h-[36px] px-2.5 rounded-[6px] hairline bg-[var(--bg)] text-[var(--ink)] cursor-pointer"
+                        >
+                          Prev
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setActiveIndex((i) => (i + 1) % openTasks.length)
+                          }
+                          className="min-h-[36px] px-2.5 rounded-[6px] hairline bg-[var(--bg)] text-[var(--ink)] cursor-pointer"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </form>
+              </div>
             ) : (
-              <div className="grid grid-cols-2 gap-2">
-                <Link
-                  href="/"
-                  className="min-h-[48px] rounded-[8px] bg-[var(--signal)] text-[#faf8f2] flex items-center justify-center text-sm font-semibold"
-                >
-                  Open Studio
-                </Link>
-                <Link
-                  href="/approve"
-                  className="min-h-[48px] rounded-[8px] bg-[var(--key)] text-[var(--key-ink)] flex items-center justify-center text-sm font-medium"
-                >
-                  Open Approve
-                </Link>
+              <div className="p-6 space-y-4">
+                <p className="text-sm text-[var(--ink-2)]">
+                  No open excerpts waiting for review. Run a clip in Studio or review submitted fixes in Approve.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Link
+                    href="/"
+                    className="min-h-[46px] rounded-[8px] bg-[var(--signal)] text-[#fbf8f1] flex items-center justify-center text-sm font-semibold"
+                  >
+                    Open Studio
+                  </Link>
+                  <Link
+                    href="/approve"
+                    className="min-h-[46px] rounded-[8px] hairline bg-[var(--bg)] text-[var(--ink)] flex items-center justify-center text-sm font-medium"
+                  >
+                    Open Approve
+                  </Link>
+                </div>
               </div>
             )}
 
             {error && (
-              <p role="alert" className="text-xs text-[#ff8254]">
+              <p role="alert" className="px-4 pb-3 text-xs text-[var(--red)]">
                 {error}
               </p>
             )}
@@ -447,7 +521,7 @@ export default function EarPage() {
 
         {/* Right: Earnings & Task Ledger */}
         <div className="lg:col-span-6 space-y-6">
-          <div className="rounded-[14px] hairline bg-[var(--paper)] overflow-hidden">
+          <div className="rounded-[12px] hairline bg-[var(--paper)] overflow-hidden">
             <div className="grid grid-cols-2 divide-x divide-[var(--line)]">
               <div className="p-5">
                 <div className="type-label">Paid today</div>
@@ -462,14 +536,13 @@ export default function EarPage() {
                 </div>
               </div>
             </div>
-            <div className="px-5 py-3 hairline-t text-xs text-[var(--mute)]">
-              Audio is sliced server-side to at most 12 seconds. Full client files stay private.
+            <div className="px-5 py-3 hairline-t bg-[var(--bg)]/35 text-xs text-[var(--mute)]">
+              Audio is sliced server-side to at most 12 seconds. Full client masters stay private.
             </div>
           </div>
 
-          {/* Completed ledger */}
-          <div className="rounded-[14px] hairline bg-[var(--paper)] overflow-hidden">
-            <div className="px-5 py-3.5 hairline-b flex items-center justify-between">
+          <div className="rounded-[12px] hairline bg-[var(--paper)] overflow-hidden">
+            <div className="px-5 py-3 hairline-b bg-[var(--bg)]/35 flex items-center justify-between">
               <h2 className="type-label">History ({completedTasks.length})</h2>
               <Link
                 href="/approve"
