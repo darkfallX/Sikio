@@ -2,13 +2,77 @@ import fs from "fs";
 import path from "path";
 import { NextRequest, NextResponse } from "next/server";
 import { getClipSpec } from "@/lib/clips";
+import { findUploadedClip } from "@/lib/storage";
 
 export const runtime = "nodejs";
 
+function sliceWavBuffer(
+  buf: Buffer,
+  startSec: number,
+  endSec: number
+): Buffer | null {
+  if (
+    buf.length < 44 ||
+    buf.toString("ascii", 0, 4) !== "RIFF" ||
+    buf.toString("ascii", 8, 12) !== "WAVE"
+  ) {
+    return null;
+  }
+
+  const channels = buf.readUInt16LE(22);
+  const sampleRate = buf.readUInt32LE(24);
+  const byteRate = buf.readUInt32LE(28);
+  const blockAlign = buf.readUInt16LE(32);
+  const bitsPerSample = buf.readUInt16LE(34);
+  if (!byteRate || !blockAlign) return null;
+
+  let pos = 12;
+  let dataOffset = 44;
+  let dataSize = buf.length - 44;
+  while (pos + 8 <= buf.length) {
+    const chunkId = buf.toString("ascii", pos, pos + 4);
+    const chunkSize = buf.readUInt32LE(pos + 4);
+    if (chunkId === "data") {
+      dataOffset = pos + 8;
+      dataSize = Math.min(chunkSize, buf.length - dataOffset);
+      break;
+    }
+    pos += 8 + chunkSize;
+  }
+
+  const rawStartByte = Math.floor(startSec * byteRate);
+  const rawEndByte = Math.ceil(endSec * byteRate);
+  const startByte = Math.min(
+    Math.max(0, dataSize - blockAlign),
+    rawStartByte - (rawStartByte % blockAlign)
+  );
+  const endByte = Math.min(
+    dataSize,
+    Math.max(startByte + blockAlign, rawEndByte - (rawEndByte % blockAlign))
+  );
+  const pcmSlice = buf.subarray(dataOffset + startByte, dataOffset + endByte);
+
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0, "ascii");
+  header.writeUInt32LE(36 + pcmSlice.length, 4);
+  header.write("WAVE", 8, "ascii");
+  header.write("fmt ", 12, "ascii");
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write("data", 36, "ascii");
+  header.writeUInt32LE(pcmSlice.length, 40);
+
+  return Buffer.concat([header, pcmSlice]);
+}
+
 /**
- * Excerpt-only WAV delivery for client confidentiality:
- * Editors on the Ear screen ONLY receive the flagged [start, end] seconds (max 12s),
- * never the full agency master recording.
+ * Excerpt-only audio delivery for client confidentiality:
+ * Editors ONLY receive the flagged [start, end] seconds (max 12s), never the full master file.
  */
 export async function GET(
   req: NextRequest,
@@ -16,80 +80,82 @@ export async function GET(
 ) {
   try {
     const { clipId } = await context.params;
+    const url = new URL(req.url);
+    const rawStart = url.searchParams.get("start");
+    const rawEnd = url.searchParams.get("end");
+
+    const parsedStart = rawStart !== null ? Number(rawStart) : 0;
+    const parsedEnd = rawEnd !== null ? Number(rawEnd) : parsedStart + 4;
+
+    if (
+      !Number.isFinite(parsedStart) ||
+      !Number.isFinite(parsedEnd) ||
+      parsedStart < 0 ||
+      parsedEnd <= parsedStart
+    ) {
+      return NextResponse.json(
+        { error: "Invalid excerpt window" },
+        { status: 400 }
+      );
+    }
+
+    const startSec = parsedStart;
+    // Hard confidentiality guard: max 12s excerpt
+    const endSec = Math.min(parsedEnd, startSec + 12);
+
     const spec = getClipSpec(clipId);
-    if (!spec) {
+    if (spec) {
+      const wavPath = path.join(process.cwd(), "public", "clips", `${clipId}.wav`);
+      const buf = fs.readFileSync(wavPath);
+      const excerptWav = sliceWavBuffer(buf, startSec, endSec);
+      if (!excerptWav) {
+        return NextResponse.json({ error: "Corrupt clip WAV" }, { status: 500 });
+      }
+      return new NextResponse(new Uint8Array(excerptWav), {
+        status: 200,
+        headers: {
+          "Content-Type": "audio/wav",
+          "Content-Length": String(excerptWav.length),
+          "Cache-Control": "no-store",
+          "X-Sikio-Excerpt-Only": "true",
+          "X-Sikio-Window": `${startSec.toFixed(2)}s-${endSec.toFixed(2)}s`,
+          "X-Sikio-Full-Duration-Withheld": "true",
+        },
+      });
+    }
+
+    const uploaded = findUploadedClip(clipId);
+    if (!uploaded) {
       return NextResponse.json({ error: "Unknown clip" }, { status: 404 });
     }
 
-    const url = new URL(req.url);
-    const startSec = Math.max(0, Number(url.searchParams.get("start") || 0));
-    const rawEndSec = Number(url.searchParams.get("end") || startSec + 4);
-    // Hard confidentiality guard: never deliver more than 12 seconds in an editor excerpt
-    const endSec = Math.min(rawEndSec, startSec + 12);
-    if (endSec <= startSec) {
-      return NextResponse.json({ error: "Invalid excerpt window" }, { status: 400 });
-    }
-
-    const wavPath = path.join(process.cwd(), "public", "clips", `${clipId}.wav`);
-    const buf = fs.readFileSync(wavPath);
-
-    const channels = buf.readUInt16LE(22);
-    const sampleRate = buf.readUInt32LE(24);
-    const byteRate = buf.readUInt32LE(28);
-    const blockAlign = buf.readUInt16LE(32);
-    const bitsPerSample = buf.readUInt16LE(34);
-
-    // Locate 'data' chunk reliably
-    let pos = 12;
-    let dataOffset = 44;
-    let dataSize = buf.length - 44;
-    while (pos + 8 <= buf.length) {
-      const chunkId = buf.toString("ascii", pos, pos + 4);
-      const chunkSize = buf.readUInt32LE(pos + 4);
-      if (chunkId === "data") {
-        dataOffset = pos + 8;
-        dataSize = chunkSize;
-        break;
+    const buf = fs.readFileSync(uploaded.filePath);
+    if (uploaded.meta.isWav) {
+      const excerptWav = sliceWavBuffer(buf, startSec, endSec);
+      if (excerptWav) {
+        return new NextResponse(new Uint8Array(excerptWav), {
+          status: 200,
+          headers: {
+            "Content-Type": "audio/wav",
+            "Content-Length": String(excerptWav.length),
+            "Cache-Control": "no-store",
+            "X-Sikio-Excerpt-Only": "true",
+            "X-Sikio-Window": `${startSec.toFixed(2)}s-${endSec.toFixed(2)}s`,
+            "X-Sikio-Full-Duration-Withheld": "true",
+          },
+        });
       }
-      pos += 8 + chunkSize;
     }
 
-    const rawStartByte = Math.floor(startSec * byteRate);
-    const rawEndByte = Math.ceil(endSec * byteRate);
-    // Align to sample frame boundary
-    const startByte = Math.min(dataSize, rawStartByte - (rawStartByte % blockAlign));
-    const endByte = Math.min(dataSize, rawEndByte - (rawEndByte % blockAlign));
-    const sliceLen = Math.max(blockAlign, endByte - startByte);
-
-    const pcmSlice = buf.subarray(dataOffset + startByte, dataOffset + startByte + sliceLen);
-
-    // Build clean standard 44-byte PCM RIFF/WAV header for ONLY this excerpt
-    const header = Buffer.alloc(44);
-    header.write("RIFF", 0, "ascii");
-    header.writeUInt32LE(36 + pcmSlice.length, 4);
-    header.write("WAVE", 8, "ascii");
-    header.write("fmt ", 12, "ascii");
-    header.writeUInt32LE(16, 16); // PCM fmt chunk size
-    header.writeUInt16LE(1, 20); // PCM audio format
-    header.writeUInt16LE(channels, 22);
-    header.writeUInt32LE(sampleRate, 24);
-    header.writeUInt32LE(byteRate, 28);
-    header.writeUInt16LE(blockAlign, 32);
-    header.writeUInt16LE(bitsPerSample, 34);
-    header.write("data", 36, "ascii");
-    header.writeUInt32LE(pcmSlice.length, 40);
-
-    const excerptWav = Buffer.concat([header, pcmSlice]);
-
-    return new NextResponse(excerptWav, {
+    // Compressed non-WAV custom uploads rely on player window clamping
+    return new NextResponse(new Uint8Array(buf), {
       status: 200,
       headers: {
-        "Content-Type": "audio/wav",
-        "Content-Length": String(excerptWav.length),
+        "Content-Type": uploaded.meta.mimeType || "application/octet-stream",
+        "Content-Length": String(buf.length),
         "Cache-Control": "no-store",
-        "X-Sikio-Excerpt-Only": "true",
+        "X-Sikio-Excerpt-Only": "client-window",
         "X-Sikio-Window": `${startSec.toFixed(2)}s-${endSec.toFixed(2)}s`,
-        "X-Sikio-Full-Duration-Withheld": "true",
       },
     });
   } catch (err) {
