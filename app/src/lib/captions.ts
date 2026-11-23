@@ -14,7 +14,7 @@ export interface FlaggedCluster {
 
 /**
  * Identifies low-confidence words below `threshold` and merges nearby uncertain words
- * (within 1 word gap) into clean micro-review tasks with 1.2s audio padding on each side.
+ * (within 2 word indices) into continuous micro-review spans with 0.65s context padding.
  */
 export function buildFlaggedClusters(
   words: CaptionWord[],
@@ -30,7 +30,7 @@ export function buildFlaggedClusters(
   const groups: number[][] = [];
   for (const idx of flaggedIndices) {
     const last = groups[groups.length - 1];
-    if (last && idx - last[last.length - 1] <= 1) {
+    if (last && idx - last[last.length - 1] <= 2) {
       last.push(idx);
     } else {
       groups.push([idx]);
@@ -43,20 +43,34 @@ export function buildFlaggedClusters(
     const firstWord = words[firstIdx];
     const lastWord = words[lastIdx];
 
+    // Fill continuous word indices so bridge words inside a merged phrase are cleanly replaced too
+    const continuousIndices: number[] = [];
+    for (let k = firstIdx; k <= lastIdx; k++) {
+      continuousIndices.push(k);
+    }
+
     const ctxBeforeWords = words.slice(Math.max(0, firstIdx - 5), firstIdx);
-    const ctxAfterWords = words.slice(lastIdx + 1, Math.min(words.length, lastIdx + 6));
+    const ctxAfterWords = words.slice(
+      lastIdx + 1,
+      Math.min(words.length, lastIdx + 6)
+    );
     const guessWords = words.slice(firstIdx, lastIdx + 1);
 
-    const excerptStart = Math.max(0, Number((firstWord.start - 1.3).toFixed(2)));
+    const excerptStart = Math.max(0, Number((firstWord.start - 0.65).toFixed(2)));
     const excerptEnd = Math.min(
       durationSeconds,
-      Number((lastWord.end + 1.3).toFixed(2))
+      Number((lastWord.end + 0.65).toFixed(2))
     );
 
-    const minConfidence = Math.min(...guessWords.map((w) => w.confidence));
+    const flaggedGuessWords = guessWords.filter((w) => w.confidence < threshold);
+    const minConfidence = Math.min(
+      ...(flaggedGuessWords.length > 0 ? flaggedGuessWords : guessWords).map(
+        (w) => w.confidence
+      )
+    );
 
     return {
-      wordIndices: group,
+      wordIndices: continuousIndices,
       focusStart: firstWord.start,
       focusEnd: lastWord.end,
       excerptStart,
@@ -70,23 +84,30 @@ export function buildFlaggedClusters(
 }
 
 /**
- * Merges an approved human correction back into the caption words at exact timestamps.
+ * Merges an approved human correction back into the caption words at exact timestamps,
+ * preserving trailing sentence punctuation from the original phrase boundary if omitted.
  */
 export function applyCorrectionToWords(
   words: CaptionWord[],
   wordIndices: number[],
   correctedPhrase: string
 ): CaptionWord[] {
-  const cleaned = correctedPhrase.trim();
+  let cleaned = correctedPhrase.trim();
   if (!cleaned || wordIndices.length === 0) return words;
 
   const firstIdx = wordIndices[0];
+  const lastIdx = wordIndices[wordIndices.length - 1];
+  const originalLast = words.find((w) => w.index === lastIdx);
+  const trailingPunct = originalLast?.aiText.match(/[.,!?]+$/)?.[0] || "";
+  if (trailingPunct && !/[.,!?]$/.test(cleaned)) {
+    cleaned = `${cleaned}${trailingPunct}`;
+  }
+
   const restSet = new Set(wordIndices.slice(1));
   const splitTokens = cleaned.split(/\s+/);
 
   return words.map((w) => {
     if (w.index === firstIdx) {
-      // If replacement has exact same token count, map 1:1; otherwise place full phrase on anchor word
       if (splitTokens.length === wordIndices.length) {
         return {
           ...w,
@@ -131,7 +152,7 @@ interface SubtitleCue {
 }
 
 /**
- * Groups timed words into readable subtitle cues (max ~9 words or ~42 chars per cue).
+ * Groups timed words into readable subtitle cues respecting sentence and clause punctuation.
  */
 export function buildSubtitleCues(words: CaptionWord[]): SubtitleCue[] {
   const visible = words.filter((w) => w.currentText.trim().length > 0);
@@ -153,7 +174,8 @@ export function buildSubtitleCues(words: CaptionWord[]): SubtitleCue[] {
     buffer.push(w);
     const charLen = buffer.map((x) => x.currentText).join(" ").length;
     const endsSentence = /[.!?]$/.test(w.currentText);
-    if (buffer.length >= 8 || charLen >= 44 || endsSentence) {
+    const endsClause = /[,;:]$/.test(w.currentText) && charLen >= 24;
+    if (buffer.length >= 8 || charLen >= 44 || endsSentence || endsClause) {
       flush();
     }
   }
@@ -202,6 +224,37 @@ export function serializeToVtt(words: CaptionWord[]): string {
 }
 
 /**
+ * Merges overlapping [start, end] time intervals and returns total unique covered seconds.
+ */
+export function computeMergedDuration(
+  spans: { start: number; end: number }[]
+): number {
+  const valid = spans
+    .filter((s) => Number.isFinite(s.start) && Number.isFinite(s.end) && s.end > s.start)
+    .map((s) => ({ start: Math.max(0, s.start), end: s.end }))
+    .sort((a, b) => a.start - b.start);
+
+  if (valid.length === 0) return 0;
+
+  let total = 0;
+  let curStart = valid[0].start;
+  let curEnd = valid[0].end;
+
+  for (let i = 1; i < valid.length; i++) {
+    const next = valid[i];
+    if (next.start <= curEnd) {
+      curEnd = Math.max(curEnd, next.end);
+    } else {
+      total += curEnd - curStart;
+      curStart = next.start;
+      curEnd = next.end;
+    }
+  }
+  total += curEnd - curStart;
+  return Number(total.toFixed(2));
+}
+
+/**
  * Calculates itemized cost per publishable minute vs. traditional full-timeline agency review.
  * Standard African localization agency human pass: ~$3.50/min ($0.058/sec).
  */
@@ -210,21 +263,33 @@ export function computeCostMetrics(params: {
   inferenceCostTusd8: number;
   humanSpentTusd8: number;
   humanReservedTusd8: number;
-  flaggedSeconds: number;
+  flaggedSeconds?: number;
+  excerptSpans?: { start: number; end: number }[];
 }) {
-  const minutes = Math.max(params.durationSeconds / 60, 0.01);
+  const duration = Math.max(params.durationSeconds, 1);
+  const minutes = Math.max(duration / 60, 0.01);
   const totalSettled = params.inferenceCostTusd8 + params.humanSpentTusd8;
   const totalProjected = totalSettled + params.humanReservedTusd8;
   const costPerMinuteSettled = totalSettled / minutes;
   const costPerMinuteProjected = totalProjected / minutes;
   const fullHumanReviewCostPerMin = 3.5; // baseline agency full-transcript review rate
   const fullHumanCostForClip = fullHumanReviewCostPerMin * minutes;
-  const reviewTimeSavedPct = Math.max(
-    0,
-    Math.min(95, Math.round((1 - params.flaggedSeconds / Math.max(params.durationSeconds, 1)) * 100))
+
+  const coveredSec = params.excerptSpans
+    ? computeMergedDuration(params.excerptSpans)
+    : Math.max(0, Math.min(duration, params.flaggedSeconds ?? 0));
+
+  const clampedCovered = Math.min(duration, coveredSec);
+  const rawSavedPct = Math.round((1 - clampedCovered / duration) * 100);
+  const reviewTimeSavedPct = Math.max(0, Math.min(95, rawSavedPct));
+  const isCheaperThanFull = costPerMinuteProjected <= fullHumanReviewCostPerMin;
+  const costSavingsPct = Math.round(
+    (1 - costPerMinuteProjected / fullHumanReviewCostPerMin) * 100
   );
+
   return {
     minutes,
+    coveredSec: clampedCovered,
     totalSettled,
     totalProjected,
     costPerMinuteSettled,
@@ -232,5 +297,7 @@ export function computeCostMetrics(params: {
     fullHumanReviewCostPerMin,
     fullHumanCostForClip,
     reviewTimeSavedPct,
+    isCheaperThanFull,
+    costSavingsPct,
   };
 }
