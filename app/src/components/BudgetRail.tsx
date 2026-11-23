@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import { ShieldAlert, ShieldCheck, Lock } from "lucide-react";
 import { BatchBudget } from "@/lib/types";
 import { shortAddr } from "@/lib/aevum";
 
@@ -38,128 +37,107 @@ export function BudgetRail({
   );
 
   return (
-    <div className="rounded-[6px] border border-[#DDD7CA] bg-[#FBF9F4] overflow-hidden">
-      <div className="px-4 py-3 border-b border-[#DDD7CA] flex items-center justify-between gap-2 bg-[#F4F1EA]/70">
-        <div className="flex items-center gap-2">
-          <Lock className="w-3.5 h-3.5 text-[#141311]" />
-          <h2 className="text-xs font-semibold uppercase tracking-[0.05em] text-[#141311]">
-            Batch #{batch.batchId} Policy
-          </h2>
-        </div>
+    <div className="rounded-[14px] hairline bg-[var(--paper)] overflow-hidden">
+      <div className="px-5 py-3.5 hairline-b flex items-center justify-between gap-2">
+        <span className="type-label">Batch #{batch.batchId} budget</span>
         <span
-          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-[11px] font-mono font-medium ${
+          className={`px-2.5 py-0.5 rounded-full font-mono text-[11px] font-medium tabular-nums ${
             batch.agentRevoked
-              ? "bg-[#FAEAE4] text-[#C94A22]"
-              : "bg-[#E7F4ED] text-[#1B6B46]"
+              ? "bg-[var(--red-bg)] text-[var(--red)]"
+              : "bg-[var(--green-bg)] text-[var(--green)]"
           }`}
         >
-          {batch.agentRevoked ? (
-            <>
-              <ShieldAlert className="w-3 h-3" /> REVOKED
-            </>
-          ) : (
-            <>
-              <ShieldCheck className="w-3 h-3" /> {daysLeft}D LEFT
-            </>
-          )}
+          {batch.agentRevoked ? "Revoked" : `${daysLeft}d left`}
         </span>
       </div>
 
-      <div className="p-4 space-y-4">
-        {/* Stacked Cap Meter */}
-        <div>
-          <div className="flex items-baseline justify-between text-xs mb-1.5 tabular-nums">
-            <span className="text-[#5C574E]">Available cap</span>
-            <span className="font-mono font-semibold text-[#141311]">
-              {availableBudgetTusd8.toFixed(2)}{" "}
-              <span className="text-[#847D72] font-normal">
-                / {batch.maxBudgetTusd8.toFixed(2)} tUSD8
-              </span>
-            </span>
-          </div>
-
-          <div className="h-2.5 w-full rounded-[3px] bg-[#EBE6DB] overflow-hidden flex border border-[#DDD7CA]">
-            <div
-              style={{ width: `${spentPct}%` }}
-              className="bg-[#1B6B46] h-full transition-all duration-200"
-              title={`Settled: ${batch.spentTusd8.toFixed(2)} tUSD8`}
-            />
-            <div
-              style={{ width: `${reservedPct}%` }}
-              className="bg-[#C94A22] h-full transition-all duration-200"
-              title={`Reserved: ${batch.reservedTusd8.toFixed(2)} tUSD8`}
-            />
-          </div>
-
-          <div className="mt-2.5 grid grid-cols-3 border border-[#DDD7CA] rounded-[5px] divide-x divide-[#DDD7CA] bg-[#F4F1EA] text-[11px] tabular-nums">
-            <div className="px-2.5 py-2">
-              <div className="text-[#5C574E]">Settled</div>
-              <div className="font-mono font-semibold text-[#1B6B46] mt-0.5">
-                {batch.spentTusd8.toFixed(2)}
-              </div>
-            </div>
-            <div className="px-2.5 py-2">
-              <div className="text-[#5C574E]">Escrowed</div>
-              <div className="font-mono font-semibold text-[#C94A22] mt-0.5">
-                {batch.reservedTusd8.toFixed(2)}
-              </div>
-            </div>
-            <div className="px-2.5 py-2">
-              <div className="text-[#5C574E]">Task Cap</div>
-              <div className="font-mono font-semibold text-[#141311] mt-0.5">
-                {batch.maxTaskFeeTusd8.toFixed(2)}
-              </div>
-            </div>
-          </div>
+      {/* Main figure */}
+      <div className="px-5 py-4 space-y-3">
+        <div className="flex items-baseline justify-between gap-2 tabular-nums">
+          <span className="font-mono text-2xl font-semibold text-[var(--ink)]">
+            {availableBudgetTusd8.toFixed(2)}
+          </span>
+          <span className="font-mono text-xs text-[var(--mute)]">
+            of {batch.maxBudgetTusd8.toFixed(2)} tUSD8 left
+          </span>
         </div>
 
-        {/* Enforced Contract Parameters */}
-        <div className="pt-3 border-t border-[#DDD7CA] space-y-2 text-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[#5C574E]">Approver</span>
-            <span className="font-mono text-[#141311]">
-              {shortAddr(batch.approverAddress)}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-[#5C574E]">Trusted editors</span>
-            <span className="font-mono font-medium text-[#141311]">
-              {batch.trustedEditors.length} allowlisted
-            </span>
-          </div>
+        <div className="h-2 w-full rounded-full bg-[var(--panel)] overflow-hidden flex">
+          <div
+            style={{ width: `${spentPct}%` }}
+            className="bg-[var(--green)] h-full transition-all"
+          />
+          <div
+            style={{ width: `${reservedPct}%` }}
+            className="bg-[var(--amber)] h-full transition-all"
+          />
+        </div>
+      </div>
 
-          <label className="flex items-center justify-between gap-2 pt-2 border-t border-[#DDD7CA] cursor-pointer select-none">
-            <span className="text-[#141311] font-medium">
-              Auto-accept trusted editors
-            </span>
-            <input
-              type="checkbox"
-              disabled={busy}
-              checked={batch.autoAcceptTrusted}
-              onChange={(e) =>
-                onUpdatePolicy({ autoAcceptTrusted: e.target.checked })
-              }
-              className="h-4 w-4 accent-[#C94A22] cursor-pointer"
-            />
-          </label>
+      {/* Shared-border metric strip */}
+      <div className="grid grid-cols-3 hairline-t hairline-b divide-x divide-[var(--line)] bg-[var(--bg)]/50 text-xs tabular-nums">
+        <div className="px-3.5 py-2.5">
+          <div className="type-label text-[10px]">Settled</div>
+          <div className="font-mono font-semibold text-[var(--green)] mt-0.5">
+            {batch.spentTusd8.toFixed(2)}
+          </div>
+        </div>
+        <div className="px-3.5 py-2.5">
+          <div className="type-label text-[10px]">Escrowed</div>
+          <div className="font-mono font-semibold text-[var(--amber)] mt-0.5">
+            {batch.reservedTusd8.toFixed(2)}
+          </div>
+        </div>
+        <div className="px-3.5 py-2.5">
+          <div className="type-label text-[10px]">Task cap</div>
+          <div className="font-mono font-semibold text-[var(--ink)] mt-0.5">
+            {batch.maxTaskFeeTusd8.toFixed(2)}
+          </div>
+        </div>
+      </div>
 
-          <button
-            type="button"
+      {/* Policy ledger rows */}
+      <div className="px-5 py-3.5 space-y-2.5 text-xs">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[var(--mute)]">Approver</span>
+          <span className="font-mono text-[var(--ink)]">
+            {shortAddr(batch.approverAddress)}
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[var(--mute)]">Trusted editors</span>
+          <span className="font-mono text-[var(--ink)] tabular-nums">
+            {batch.trustedEditors.length} allowlisted
+          </span>
+        </div>
+
+        <label className="flex items-center justify-between gap-2 pt-2.5 hairline-t min-h-[36px] cursor-pointer select-none">
+          <span className="text-[var(--ink)] font-medium">
+            Auto-accept trusted editors
+          </span>
+          <input
+            type="checkbox"
             disabled={busy}
-            onClick={() =>
-              onUpdatePolicy({ agentRevoked: !batch.agentRevoked })
+            checked={batch.autoAcceptTrusted}
+            onChange={(e) =>
+              onUpdatePolicy({ autoAcceptTrusted: e.target.checked })
             }
-            className={`w-full mt-1 py-2 px-3 rounded-[5px] text-xs font-medium border transition-colors cursor-pointer disabled:opacity-50 ${
-              batch.agentRevoked
-                ? "bg-[#141311] text-[#FBF9F4] border-[#141311] hover:bg-[#2B2926]"
-                : "bg-[#FBF9F4] text-[#C94A22] border-[#E8C5B8] hover:bg-[#FAEAE4]"
-            }`}
-          >
-            {batch.agentRevoked
-              ? "Restore Agent Session"
-              : "Emergency Revoke Agent"}
-          </button>
-        </div>
+            className="h-4 w-4 accent-[var(--signal)] cursor-pointer"
+          />
+        </label>
+
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onUpdatePolicy({ agentRevoked: !batch.agentRevoked })}
+          className={`w-full min-h-[44px] sm:min-h-[38px] px-3 rounded-[8px] text-xs font-semibold hairline transition-colors cursor-pointer disabled:opacity-50 ${
+            batch.agentRevoked
+              ? "bg-[var(--ink)] text-[var(--paper)]"
+              : "bg-[var(--paper)] text-[var(--red)] hover:bg-[var(--red-bg)]"
+          }`}
+        >
+          {batch.agentRevoked ? "Restore agent" : "Revoke agent"}
+        </button>
       </div>
     </div>
   );

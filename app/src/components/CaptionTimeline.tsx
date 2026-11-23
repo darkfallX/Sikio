@@ -26,29 +26,21 @@ export function CaptionTimeline({
   const fixedCount = words.filter((w) => w.fixedByHuman).length;
 
   return (
-    <div className="rounded-[6px] border border-[#DDD7CA] bg-[#FBF9F4]">
-      <div className="px-5 py-3 border-b border-[#DDD7CA] flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-mono uppercase tracking-[0.06em] text-[#847D72]">
-            Script
-          </span>
-          <h2 className="text-sm font-semibold text-[#141311]">
-            Timed Word Confidence
-          </h2>
-        </div>
-
-        <div className="flex items-center gap-2.5 text-xs tabular-nums font-mono">
-          <span className="text-[#5C574E]">{words.length}w</span>
-          <span className="px-2 py-0.5 rounded-[4px] bg-[#FAEAE4] text-[#C94A22] font-medium">
+    <div className="rounded-[14px] hairline bg-[var(--paper)] overflow-hidden">
+      <div className="px-5 py-3.5 hairline-b flex flex-wrap items-center justify-between gap-2">
+        <h2 className="type-label">Timed transcript</h2>
+        <div className="flex items-center gap-3 font-mono text-xs tabular-nums">
+          <span className="text-[var(--mute)]">{words.length} words</span>
+          <span className="px-2 py-0.5 rounded-full bg-[var(--signal-bg)] text-[var(--signal-ink)] font-medium">
             {flaggedCount} flagged
           </span>
-          <span className="px-2 py-0.5 rounded-[4px] bg-[#E7F4ED] text-[#1B6B46] font-medium">
+          <span className="px-2 py-0.5 rounded-full bg-[var(--green-bg)] text-[var(--green)] font-medium">
             {fixedCount} fixed
           </span>
         </div>
       </div>
 
-      <div className="p-5 leading-[2.2] text-[16px] text-[#141311] flex flex-wrap gap-x-1.5 gap-y-1.5">
+      <div className="p-5 leading-[2.25] text-[16px] text-[var(--ink)] flex flex-wrap gap-x-1.5 gap-y-1.5">
         {words
           .filter((w) => w.currentText.trim().length > 0)
           .map((w) => {
@@ -57,20 +49,20 @@ export function CaptionTimeline({
               currentTime >= w.start - 0.04 && currentTime <= w.end + 0.06;
 
             let tone =
-              "hover:bg-[#EBE6DB] text-[#141311] border-b border-transparent";
+              "hover:bg-[var(--hover)] text-[var(--ink)] border-b-2 border-transparent";
             if (w.fixedByHuman) {
               tone =
-                "bg-[#E7F4ED] text-[#1B6B46] border-b-2 border-[#1B6B46] font-medium";
+                "bg-[var(--green-bg)] text-[var(--green)] border-b-2 border-[var(--green)] font-semibold";
             } else if (linkedTask?.status === "submitted") {
               tone =
-                "bg-[#FBF2DD] text-[#945D00] border-b-2 border-[#D4941A] font-medium";
+                "bg-[var(--amber-bg)] text-[var(--amber)] border-b-2 border-[var(--amber)] font-semibold";
             } else if (w.flagged) {
               tone =
-                "bg-[#FAEAE4] text-[#B33C17] border-b-2 border-[#C94A22] font-medium";
+                "bg-[var(--signal-bg)] text-[var(--signal-ink)] border-b-2 border-[var(--signal)] font-semibold";
             }
 
             if (isNow) {
-              tone += " ring-2 ring-[#141311] ring-offset-1 ring-offset-[#FBF9F4]";
+              tone += " ring-2 ring-[var(--ink)] ring-offset-1 ring-offset-[var(--paper)]";
             }
 
             return (
@@ -78,14 +70,12 @@ export function CaptionTimeline({
                 key={w.index}
                 type="button"
                 onClick={() => onWordClick(w)}
-                title={`${w.start.toFixed(2)}s · AI ${Math.round(
-                  w.confidence * 100
-                )}%${w.fixedByHuman ? ` · Original AI: "${w.aiText}"` : ""}`}
-                className={`px-1.5 py-0.5 rounded-[4px] transition-colors cursor-pointer ${tone}`}
+                title={`${w.start.toFixed(2)}s · ${Math.round(w.confidence * 100)}%`}
+                className={`px-1.5 py-0.5 rounded-[6px] transition-colors cursor-pointer ${tone}`}
               >
                 <span>{w.currentText}</span>
                 {w.flagged && !w.fixedByHuman && (
-                  <span className="ml-1 text-[10px] font-mono opacity-80">
+                  <span className="ml-1 font-mono text-[10px] tabular-nums opacity-80">
                     {Math.round(w.confidence * 100)}%
                   </span>
                 )}

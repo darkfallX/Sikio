@@ -7,7 +7,6 @@ import {
   RotateCcw,
   SkipBack,
   SkipForward,
-  Gauge,
 } from "lucide-react";
 import { CaptionJob, ReviewTask } from "@/lib/types";
 import { buildSubtitleCues } from "@/lib/captions";
@@ -35,7 +34,6 @@ export function WaveformPlayer({
 }: WaveformPlayerProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const trackRef = useRef<HTMLDivElement | null>(null);
 
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -44,6 +42,7 @@ export function WaveformPlayer({
   const [compareRawAi, setCompareRawAi] = useState(false);
   const [hoverTime, setHoverTime] = useState<number | null>(null);
   const [peaks, setPeaks] = useState<number[]>([]);
+  const [themeTick, setThemeTick] = useState(0);
   const [audioError, setAudioError] = useState<string | null>(null);
 
   const hasHumanFixes = useMemo(
@@ -51,7 +50,17 @@ export function WaveformPlayer({
     [job.words]
   );
 
-  // Decode real acoustic amplitude peaks from the actual WAV/audio asset via Web Audio API
+  // Re-render canvas when dark/light theme changes
+  useEffect(() => {
+    const obs = new MutationObserver(() => setThemeTick((t) => t + 1));
+    obs.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    return () => obs.disconnect();
+  }, []);
+
+  // Decode actual PCM amplitude peaks via Web Audio API
   useEffect(() => {
     let cancelled = false;
     const decodePeaks = async () => {
@@ -66,7 +75,7 @@ export function WaveformPlayer({
         const ctx = new AudioCtx();
         const decoded = await ctx.decodeAudioData(buf.slice(0));
         const channel = decoded.getChannelData(0);
-        const barCount = 132;
+        const barCount = 128;
         const blockSize = Math.max(1, Math.floor(channel.length / barCount));
         const rawPeaks: number[] = [];
         let maxPeak = 0.01;
@@ -90,13 +99,13 @@ export function WaveformPlayer({
           );
         }
       } catch {
-        // Fallback deterministic bars if custom browser blob cannot be decoded
         if (!cancelled) {
-          const fallback = Array.from({ length: 132 }, (_, i) => {
-            const v = ((i * 37 + job.clipId.length * 19) % 100) / 100;
-            return Number((0.18 + v * 0.72).toFixed(2));
-          });
-          setPeaks(fallback);
+          setPeaks(
+            Array.from({ length: 128 }, (_, i) => {
+              const v = ((i * 37 + job.clipId.length * 19) % 100) / 100;
+              return Number((0.18 + v * 0.72).toFixed(2));
+            })
+          );
         }
       }
     };
@@ -129,7 +138,6 @@ export function WaveformPlayer({
     }
   }, [seekToTime]);
 
-  // Draw crisp retina waveform canvas whenever peaks, playhead, hover, or task statuses change
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || peaks.length === 0) return;
@@ -142,35 +150,33 @@ export function WaveformPlayer({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
+    const cs = getComputedStyle(document.documentElement);
+    const ink = cs.getPropertyValue("--ink").trim() || "#12110d";
+    const mute = cs.getPropertyValue("--mute").trim() || "#6c6759";
+    const line = cs.getPropertyValue("--line").trim() || "#d6cfbf";
+    const signal = cs.getPropertyValue("--signal").trim() || "#dd4f1b";
+    const green = cs.getPropertyValue("--green").trim() || "#0e7c4a";
+    const signalBg = cs.getPropertyValue("--signal-bg").trim() || "rgba(221,79,27,0.1)";
+    const greenBg = cs.getPropertyValue("--green-bg").trim() || "rgba(14,124,74,0.1)";
+
     ctx.scale(dpr, dpr);
     const w = rect.width;
     const h = rect.height;
     ctx.clearRect(0, 0, w, h);
 
-    // Subtle center baseline rule
-    ctx.fillStyle = "#DCD5C7";
+    ctx.fillStyle = line;
     ctx.fillRect(0, h / 2 - 0.5, w, 1);
 
-    // Highlight flagged / accepted spans directly behind waveform
     for (const t of tasks) {
       if (t.status === "rejected" || t.status === "expired") continue;
       const x1 = (t.focusStart / Math.max(duration, 1)) * w;
-      const x2 = Math.max(
-        x1 + 6,
-        (t.focusEnd / Math.max(duration, 1)) * w
-      );
-      ctx.fillStyle =
-        t.status === "accepted"
-          ? "rgba(27, 107, 70, 0.16)"
-          : "rgba(201, 74, 34, 0.16)";
+      const x2 = Math.max(x1 + 6, (t.focusEnd / Math.max(duration, 1)) * w);
+      ctx.fillStyle = t.status === "accepted" ? greenBg : signalBg;
       ctx.fillRect(x1, 0, x2 - x1, h);
-
-      // Top tape bar accent
-      ctx.fillStyle = t.status === "accepted" ? "#1B6B46" : "#C94A22";
-      ctx.fillRect(x1, 0, x2 - x1, 3);
+      ctx.fillStyle = t.status === "accepted" ? green : signal;
+      ctx.fillRect(x1, 0, x2 - x1, 2.5);
     }
 
-    // Draw real acoustic bars
     const progressRatio = duration > 0 ? currentTime / duration : 0;
     const step = w / peaks.length;
     const barW = Math.max(1.5, step - 1.5);
@@ -192,35 +198,29 @@ export function WaveformPlayer({
 
       if (ratio <= progressRatio) {
         ctx.fillStyle =
-          inFlag?.status === "accepted"
-            ? "#1B6B46"
-            : inFlag
-            ? "#C94A22"
-            : "#141311";
+          inFlag?.status === "accepted" ? green : inFlag ? signal : ink;
       } else {
+        ctx.globalAlpha = 0.42;
         ctx.fillStyle =
-          inFlag?.status === "accepted"
-            ? "#7BB89B"
-            : inFlag
-            ? "#DF957D"
-            : "#ADA699";
+          inFlag?.status === "accepted" ? green : inFlag ? signal : mute;
       }
 
       ctx.fillRect(x, y, barW, barH);
+      ctx.globalAlpha = 1;
     }
 
-    // Hover needle
     if (hoverTime !== null && duration > 0) {
       const hx = (hoverTime / duration) * w;
-      ctx.fillStyle = "rgba(20, 19, 17, 0.35)";
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = ink;
       ctx.fillRect(hx, 0, 1, h);
+      ctx.globalAlpha = 1;
     }
 
-    // Active playhead needle
     const px = progressRatio * w;
-    ctx.fillStyle = "#C94A22";
+    ctx.fillStyle = signal;
     ctx.fillRect(px - 1, 0, 2, h);
-  }, [peaks, currentTime, duration, hoverTime, tasks]);
+  }, [peaks, currentTime, duration, hoverTime, tasks, themeTick]);
 
   const cues = useMemo(() => buildSubtitleCues(job.words), [job.words]);
 
@@ -260,26 +260,17 @@ export function WaveformPlayer({
       el.playbackRate = playbackRate;
       el.play()
         .then(() => setPlaying(true))
-        .catch(() =>
-          setAudioError("Browser blocked audio autoplay; click play again.")
-        );
+        .catch(() => setAudioError("Click play again to start audio."));
     }
   };
 
   const jumpToFlag = (direction: -1 | 1) => {
     if (sortedTasks.length === 0) return;
-    let target: ReviewTask | undefined;
-    if (direction === 1) {
-      target =
-        sortedTasks.find((t) => t.focusStart > currentTime + 0.3) ||
-        sortedTasks[0];
-    } else {
-      target =
-        [...sortedTasks]
-          .reverse()
-          .find((t) => t.focusStart < currentTime - 0.5) ||
-        sortedTasks[sortedTasks.length - 1];
-    }
+    const target =
+      direction === 1
+        ? sortedTasks.find((t) => t.focusStart > currentTime + 0.3) || sortedTasks[0]
+        : [...sortedTasks].reverse().find((t) => t.focusStart < currentTime - 0.5) ||
+          sortedTasks[sortedTasks.length - 1];
     if (target && audioRef.current) {
       const t = Math.max(0, target.start);
       audioRef.current.currentTime = t;
@@ -296,31 +287,20 @@ export function WaveformPlayer({
     const rect = e.currentTarget.getBoundingClientRect();
     const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
     const target = ratio * duration;
-    if (audioRef.current) {
-      audioRef.current.currentTime = target;
-    }
+    if (audioRef.current) audioRef.current.currentTime = target;
     setCurrentTime(target);
     onTimeChange?.(target);
   };
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-    setHoverTime(ratio * duration);
-  };
-
-  // Timecode ruler ticks (every ~3 seconds)
   const ticks = useMemo(() => {
     const step = duration > 30 ? 5 : 3;
     const list: number[] = [];
-    for (let t = 0; t <= duration; t += step) {
-      list.push(t);
-    }
+    for (let t = 0; t <= duration; t += step) list.push(t);
     return list;
   }, [duration]);
 
   return (
-    <div className="border border-[#DDD7CA] bg-[#FBF9F4] rounded-[6px] overflow-hidden">
+    <div className="rounded-[14px] hairline bg-[var(--paper)] hero-elevation overflow-hidden">
       <audio
         ref={audioRef}
         src={job.audioUrl}
@@ -335,51 +315,44 @@ export function WaveformPlayer({
           onTimeChange?.(t);
         }}
         onEnded={() => setPlaying(false)}
-        onError={() =>
-          setAudioError("Audio source unavailable for this custom clip.")
-        }
+        onError={() => setAudioError("Audio unavailable for this clip.")}
       />
 
-      {/* Matte Obsidian Broadcast Caption Monitor */}
-      <div className="bg-[#121110] text-[#FBF9F4] px-5 pt-4 pb-5">
-        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#292623]">
-          <div className="flex items-center gap-2.5 text-[11px] font-mono">
+      {/* Hardware Monitor */}
+      <div className="bg-[var(--body)] text-[#eeeadf] px-5 pt-4 pb-5">
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-white/10">
+          <div className="flex items-center gap-2 min-w-0">
             <span
-              className={`w-2 h-2 rounded-full ${
-                playing ? "bg-[#C94A22] sikio-led-live" : "bg-[#5C574E]"
+              className={`w-2 h-2 rounded-full shrink-0 ${
+                playing ? "bg-[var(--signal)] sikio-led" : "bg-[#6c6759]"
               }`}
             />
-            <span className="uppercase tracking-[0.06em] text-[#EAE4D8] font-medium">
-              {job.title}
+            <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-[#d5d0c3] truncate">
+              {job.title} · {job.languageTag}
             </span>
-            <span className="text-[#847D72]">{job.languageTag}</span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 shrink-0">
             {hasHumanFixes && (
               <div
                 role="group"
-                aria-label="Caption comparison mode"
-                className="inline-flex rounded-[4px] border border-[#2F2C28] bg-[#1C1A18] p-[2px] text-[11px]"
+                aria-label="Caption source"
+                className="inline-flex rounded-full bg-white/10 p-0.5 text-[11px]"
               >
                 <button
                   type="button"
                   onClick={() => setCompareRawAi(false)}
-                  className={`px-2 py-0.5 rounded-[3px] font-medium transition-colors cursor-pointer ${
-                    !compareRawAi
-                      ? "bg-[#1B6B46] text-[#FBF9F4]"
-                      : "text-[#9C9589] hover:text-[#FBF9F4]"
+                  className={`px-2.5 py-0.5 rounded-full font-medium cursor-pointer transition-colors ${
+                    !compareRawAi ? "bg-[var(--green)] text-[#faf8f2]" : "text-[#b8b2a6]"
                   }`}
                 >
-                  Sikio Fixed
+                  Fixed
                 </button>
                 <button
                   type="button"
                   onClick={() => setCompareRawAi(true)}
-                  className={`px-2 py-0.5 rounded-[3px] font-medium transition-colors cursor-pointer ${
-                    compareRawAi
-                      ? "bg-[#C94A22] text-[#FBF9F4]"
-                      : "text-[#9C9589] hover:text-[#FBF9F4]"
+                  className={`px-2.5 py-0.5 rounded-full font-medium cursor-pointer transition-colors ${
+                    compareRawAi ? "bg-[var(--signal)] text-[#faf8f2]" : "text-[#b8b2a6]"
                   }`}
                 >
                   Raw AI
@@ -387,36 +360,39 @@ export function WaveformPlayer({
               </div>
             )}
 
-            <span className="font-mono text-xs tabular-nums text-[#FBF9F4] bg-[#1C1A18] border border-[#2F2C28] px-2 py-0.5 rounded-[4px]">
-              {formatTimecode(currentTime)}{" "}
-              <span className="text-[#787166]">/ {formatTimecode(duration)}</span>
+            <span className="font-mono text-xs tabular-nums text-[#eeeadf]">
+              {formatTimecode(currentTime)}
+              <span className="text-[#8a8477]"> / {formatTimecode(duration)}</span>
             </span>
           </div>
         </div>
 
-        {/* Live Synced Subtitle Stage */}
-        <div className="min-h-[96px] flex items-center justify-center py-4 px-2">
+        <div
+          aria-live="polite"
+          className="min-h-[96px] flex items-center justify-center py-5 px-2"
+        >
           {activeWords.length > 0 ? (
-            <p className="text-center text-xl sm:text-[23px] leading-[1.42] font-medium tracking-[-0.015em] max-w-2xl">
+            <p className="text-center text-xl sm:text-[24px] leading-[1.35] font-semibold tracking-[-0.02em] max-w-2xl">
               {activeWords.map((w, idx) => {
                 const isSpeaking =
                   currentTime >= w.start - 0.05 && currentTime <= w.end + 0.08;
                 const displayWord = compareRawAi ? w.aiText : w.currentText;
                 const isFixed = !compareRawAi && w.fixedByHuman;
-                const isUncertain =
-                  compareRawAi ? w.confidence < job.confidenceThreshold : w.flagged;
+                const isUncertain = compareRawAi
+                  ? w.confidence < job.confidenceThreshold
+                  : w.flagged;
 
                 return (
                   <span
                     key={`${w.index}-${idx}`}
-                    className={`inline-block mx-[3px] px-1.5 py-0.5 rounded-[4px] transition-colors ${
+                    className={`inline-block mx-[3px] px-1.5 py-0.5 rounded-[6px] ${
                       isFixed
-                        ? "bg-[#1B6B46]/35 text-[#AEE8C9] border-b-2 border-[#39B57C]"
+                        ? "bg-[var(--green-bg)] text-[#8ee3b8] underline decoration-[var(--green)] decoration-2 underline-offset-4"
                         : isUncertain
-                        ? "bg-[#C94A22]/35 text-[#FFD3C4] border-b-2 border-[#C94A22]"
+                        ? "bg-[var(--signal-bg)] text-[#ffc7b3] underline decoration-[var(--signal)] decoration-2 underline-offset-4"
                         : isSpeaking
-                        ? "text-[#FFFFFF]"
-                        : "text-[#C6C0B4]"
+                        ? "text-white"
+                        : "text-[#c4bfb3]"
                     }`}
                   >
                     {displayWord}
@@ -425,39 +401,22 @@ export function WaveformPlayer({
               })}
             </p>
           ) : (
-            <p className="text-sm text-[#787166]">
-              Press play or click any acoustic peak below.
-            </p>
+            <p className="text-sm text-[#8a8477]">Press play to preview captions.</p>
           )}
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#24221F] text-[11px] text-[#8A8378]">
-          <span className="font-mono truncate">{job.transcriptionEngine}</span>
-          <div className="flex items-center gap-3.5">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-[2px] bg-[#C94A22]" />
-              Uncertain
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-[2px] bg-[#39B57C]" />
-              Human verified
-            </span>
-          </div>
         </div>
       </div>
 
-      {/* Acoustic Timecode Ruler + Decoded Waveform Track */}
-      <div className="px-4 pt-3 pb-4 space-y-2.5 bg-[#FBF9F4]">
-        {/* Timecode ticks */}
+      {/* Decoded Acoustic Timeline */}
+      <div className="p-4 sm:p-5 space-y-3 bg-[var(--paper)]">
         <div className="relative h-4 select-none">
           {ticks.map((t) => {
             const pct = (t / Math.max(duration, 1)) * 100;
-            if (pct > 95 && t > 0) return null;
+            if (pct > 92 && t > 0) return null;
             return (
               <span
                 key={t}
                 style={{ left: `${pct}%` }}
-                className="absolute top-0 text-[10px] font-mono text-[#847D72] tabular-nums"
+                className="absolute top-0 font-mono text-[10px] text-[var(--mute)] tabular-nums"
               >
                 {formatTimecode(t)}
               </span>
@@ -466,26 +425,28 @@ export function WaveformPlayer({
           {hoverTime !== null && (
             <span
               style={{
-                left: `${Math.min(92, (hoverTime / Math.max(duration, 1)) * 100)}%`,
+                left: `${Math.min(88, (hoverTime / Math.max(duration, 1)) * 100)}%`,
               }}
-              className="absolute top-0 px-1 rounded-[2px] bg-[#141311] text-[#FBF9F4] text-[10px] font-mono tabular-nums"
+              className="absolute top-0 px-1.5 rounded-[4px] bg-[var(--ink)] text-[var(--paper)] font-mono text-[10px] tabular-nums"
             >
               {formatTimecode(hoverTime)}
             </span>
           )}
         </div>
 
-        {/* Real Decoded Canvas Track */}
         <div
-          ref={trackRef}
           role="slider"
-          aria-label="Audio waveform scrubber"
+          aria-label="Audio timeline"
           aria-valuemin={0}
           aria-valuemax={Math.round(duration)}
           aria-valuenow={Math.round(currentTime)}
           tabIndex={0}
           onClick={handleScrub}
-          onMouseMove={handleMouseMove}
+          onMouseMove={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+            setHoverTime(ratio * duration);
+          }}
           onMouseLeave={() => setHoverTime(null)}
           onKeyDown={(e) => {
             if (e.key === " ") {
@@ -499,21 +460,18 @@ export function WaveformPlayer({
               jumpToFlag(-1);
             }
           }}
-          className="relative h-[76px] w-full rounded-[5px] bg-[#EFECE3] border border-[#DDD7CA] cursor-pointer overflow-hidden"
+          className="relative h-[74px] w-full rounded-[8px] hairline bg-[var(--panel)] cursor-pointer overflow-hidden"
         >
-          <canvas
-            ref={canvasRef}
-            className="w-full h-full block"
-          />
+          <canvas ref={canvasRef} className="w-full h-full block" />
         </div>
 
-        {/* Tactile Transport Deck */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-          <div className="flex flex-wrap items-center gap-1.5">
+        {/* Transport Strip */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={togglePlay}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[5px] text-sm font-medium bg-[#141311] text-[#FBF9F4] hover:bg-[#2A2824] transition-colors cursor-pointer"
+              className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-2 px-4 rounded-[8px] text-sm font-semibold bg-[var(--ink)] text-[var(--paper)] hover:opacity-90 transition-opacity cursor-pointer"
             >
               {playing ? (
                 <>
@@ -521,42 +479,42 @@ export function WaveformPlayer({
                 </>
               ) : (
                 <>
-                  <Play className="w-4 h-4" /> Play
+                  <Play className="w-4 h-4 fill-current" /> Play
                 </>
               )}
             </button>
 
             <button
               type="button"
+              aria-label="Restart"
               onClick={() => {
                 if (audioRef.current) {
                   audioRef.current.currentTime = 0;
                   setCurrentTime(0);
                 }
               }}
-              title="Restart clip"
-              className="inline-flex items-center gap-1 px-2.5 py-2 rounded-[5px] text-xs font-medium text-[#5C574E] bg-[#EBE6DB] hover:text-[#141311] transition-colors cursor-pointer"
+              className="min-h-[44px] min-w-[44px] sm:min-h-[38px] sm:min-w-[38px] inline-flex items-center justify-center rounded-[8px] hairline bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--hover)] cursor-pointer"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
+              <RotateCcw className="w-4 h-4" />
             </button>
 
             {sortedTasks.length > 0 && (
-              <div className="inline-flex items-center gap-1 ml-1 pl-2 border-l border-[#DDD7CA]">
+              <>
                 <button
                   type="button"
                   onClick={() => jumpToFlag(-1)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-[5px] text-xs font-medium text-[#141311] bg-[#EBE6DB] hover:bg-[#DDD7CA] transition-colors cursor-pointer"
+                  className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1 px-3 rounded-[8px] text-xs font-medium hairline bg-[var(--paper)] text-[var(--ink)] hover:bg-[var(--hover)] cursor-pointer"
                 >
-                  <SkipBack className="w-3.5 h-3.5" /> Prev Flag
+                  <SkipBack className="w-3.5 h-3.5" /> Prev flag
                 </button>
                 <button
                   type="button"
                   onClick={() => jumpToFlag(1)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-[5px] text-xs font-medium text-[#141311] bg-[#EBE6DB] hover:bg-[#DDD7CA] transition-colors cursor-pointer"
+                  className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1 px-3 rounded-[8px] text-xs font-medium hairline bg-[var(--paper)] text-[var(--ink)] hover:bg-[var(--hover)] cursor-pointer"
                 >
-                  Next Flag <SkipForward className="w-3.5 h-3.5" />
+                  Next flag <SkipForward className="w-3.5 h-3.5" />
                 </button>
-              </div>
+              </>
             )}
           </div>
 
@@ -567,19 +525,18 @@ export function WaveformPlayer({
               setPlaybackRate(next);
               if (audioRef.current) audioRef.current.playbackRate = next;
             }}
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-[5px] text-xs font-mono font-medium border transition-colors cursor-pointer ${
+            className={`min-h-[44px] sm:min-h-[38px] px-3 rounded-full font-mono text-xs font-medium hairline cursor-pointer transition-colors ${
               playbackRate === 0.8
-                ? "bg-[#FAEAE4] text-[#C94A22] border-[#E8C5B8]"
-                : "bg-[#FBF9F4] text-[#5C574E] border-[#DDD7CA] hover:text-[#141311]"
+                ? "bg-[var(--signal-bg)] text-[var(--signal-ink)]"
+                : "bg-[var(--paper)] text-[var(--mute)] hover:text-[var(--ink)]"
             }`}
           >
-            <Gauge className="w-3.5 h-3.5" />
-            {playbackRate === 0.8 ? "0.8× Slow" : "1.0× Speed"}
+            {playbackRate === 0.8 ? "0.8x slow" : "1.0x"}
           </button>
         </div>
 
         {audioError && (
-          <p className="text-xs text-[#C94A22]">{audioError}</p>
+          <p className="text-xs text-[var(--red)]">{audioError}</p>
         )}
       </div>
     </div>
