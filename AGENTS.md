@@ -45,20 +45,29 @@ Real Nov 22, 2026 confirmed on-chain proof hashes belong exclusively in `verifie
 
 ---
 
-## 5. Visual design and motion rules (Editorial Print Desk)
+## 5. Visual design and motion rules (Lifecycle board + Voice-note thread)
 
-- **Design reference**: Editorial Print Desk (`Fraunces` editorial serif display + `Outfit` body `400`–`800` + `JetBrains Mono` `tabular-nums`). Never use `Inter` or `VT323`.
-- **Theme tokens**:
-  - Light: warm archival book-linen paper (`#efe9dc` canvas, `#fbf8f1` proof sheet, `#171410` espresso ink, `#c9461d` proofreader terracotta `--signal`, `#196b45` botanical green `--green`).
-  - Dark: warm espresso press (`#12100e` canvas, `#1a1714` proof sheet, `#f1ece2` warm ivory ink, `#e8663c` terracotta, `#38b377` green).
-- **Audio visualization (`OrganicWaveRibbon`)**: Always render a fluid, organic, dual-contour Bezier acoustic ribbon smoothed from real Web Audio PCM RMS data. **Never** use rigid vertical bar/candlestick histograms for audio waves.
+- **Concept**:
+  - Studio (`/`) is a lifecycle board. Every unsure word is a card that moves through four columns: **Needs an ear → Heard → Paid once → Returned**. A judge should understand Sikio from this one screen.
+  - Ear (`/ear`) is a voice-note thread. The agent sends a short voice note and asks what was said, the editor replies, and the payment arrives as a message. No crypto words on this screen; show amounts as `$0.10`.
+- **Type**: `Hanken Grotesk` 400 to 800 for everything (display at 800 with tight tracking), `Fragment Mono` for timings, hashes and amounts in columns (`tabular-nums`). No serif display faces. Never use `Inter`, `VT323`, `Fraunces` or `Outfit`.
+- **Theme tokens** (`app/src/app/globals.css`, keep names stable):
+  - Light: sage desk `#e7ebe8` (`--bg`), white cards `#ffffff` (`--paper`), ink `#15201b` (`--ink`).
+  - Dark: `#0e1311` desk, `#161d1a` cards, `#e6ede9` ink.
+  - Colour only encodes state, and the same colour means the same state everywhere: `--signal` ochre = needs an ear, `--heard` blue = heard and waiting for approval, `--green` = paid once, `--mute` grey = returned or expired, `--amber` = cost warning, `--red` = error or destructive.
+  - Primary buttons are ink. The pay button is green. There is no brand accent colour beyond these.
+- **Shared primitives**: use `app/src/components/ui.tsx` (`Button`, `buttonClass`, `ButtonLink`, `StatusPill`, `ModeTag`) instead of new long class strings.
+- **Caption stage**: the live caption inside `WaveformPlayer` is a dark burned-in subtitle strip in both themes; unsure words get a dashed ochre underline, fixed words a solid green one.
+- **Audio visualization (`OrganicWaveRibbon`)**: always the fluid dual-contour Bezier ribbon from real Web Audio PCM data, including inside Ear voice notes. Never vertical bar histograms.
 - **Anti-slop discipline**:
-  - Zero gradients (linear, radial, text, buttons), zero neon glows, zero floating blobs, zero glassmorphism cards (blur allowed on sticky header only).
-  - Zero emoji icons (use `lucide-react` strokes), zero bento grids, zero checkmark bullet lists, zero filler headings/descriptions, zero banned words (`unlock`, `seamless`, `revolutionize`, `supercharge`, `next-generation`, `harness`).
-  - **Sentence case** everywhere. Zero em dashes or en dashes in any UI copy.
-  - At most one soft drop shadow (`hero-elevation`) on the hero proof object.
-  - All interactive controls `>= 44px` on mobile (`375px`) with zero horizontal scrolling or clipped tables.
-- **Motion discipline**: Single easing `cubic-bezier(0.25, 1, 0.5, 1)` across `.sikio-rise`, `.sikio-verdict`, `.sikio-check-pop`, and `.sikio-bar-fill`. Complete `prefers-reduced-motion` support.
+  - Zero gradients, neon glows, floating blobs or glassmorphism (blur only on the sticky header).
+  - Zero emoji icons (use `lucide-react`), zero bento grids, zero checkmark bullet lists, zero filler headings, zero banned words (`unlock`, `seamless`, `revolutionize`, `supercharge`, `next-generation`, `harness`).
+  - **Sentence case** everywhere. Zero em dashes or en dashes in UI copy.
+  - Plain words over system words: "Needs an ear", "Held", "Paid once", "Return fee", "Ask a human when the AI is below 78%". Not "escrowed spans", "floor" or "expire".
+  - At most one soft shadow (`hero-elevation`), used on the Ear thread.
+  - All interactive controls `>= 44px` on mobile (`375px`), no horizontal scrolling, no clipped tables.
+  - Every screen has loading, empty and error states.
+- **Motion discipline**: single easing `cubic-bezier(0.25, 1, 0.5, 1)` for `.sikio-rise`, `.sikio-card-in` (a card arriving in a new column), `.sikio-bubble` (a new message in Ear), `.sikio-verdict`, `.sikio-check-pop` and `.sikio-bar-fill`. Full `prefers-reduced-motion` support.
 
 ---
 
