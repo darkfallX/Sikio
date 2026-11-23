@@ -21,6 +21,7 @@ async function run() {
   // 1. Pages & SEO
   const routes = [
     "/",
+    "/studio",
     "/ear",
     "/approve",
     "/receipts",
