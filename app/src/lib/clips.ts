@@ -5,6 +5,7 @@ import { CaptionWord } from "./types";
 export interface ShowcaseClipSpec {
   id: string;
   title: string;
+  shortLabel: string;
   sourceLabel: string;
   languageTag: string;
   city: string;
@@ -15,7 +16,7 @@ export interface ShowcaseClipSpec {
     string,
     { aiText: string; confidence: number; note: string }
   >;
-  /** Overconfident AI mistake (scored above 0.78!) so agencies & judges see honest miss-rate behavior */
+  /** Overconfident AI mistake (scored above 0.78) so agencies see honest miss-rate behavior */
   overconfidentMistake?: {
     referenceWord: string;
     aiText: string;
@@ -27,6 +28,7 @@ export const SHOWCASE_CLIPS: ShowcaseClipSpec[] = [
   {
     id: "lagos-fintech-ep14",
     title: "Tech Point Lagos · Ep. 14",
+    shortLabel: "Lagos · Pidgin",
     sourceLabel: "Nigerian English + Pidgin · Podcast Clip",
     languageTag: "en-NG / pcm",
     city: "Lagos",
@@ -49,6 +51,7 @@ export const SHOWCASE_CLIPS: ShowcaseClipSpec[] = [
   {
     id: "nairobi-matatu-doc",
     title: "Nairobi Mobility Cut · Reel 03",
+    shortLabel: "Nairobi · Swahili",
     sourceLabel: "Kenyan English + Swahili · Documentary",
     languageTag: "en-KE / sw",
     city: "Nairobi",
@@ -70,6 +73,7 @@ export const SHOWCASE_CLIPS: ShowcaseClipSpec[] = [
   {
     id: "accra-nollywood-scene",
     title: "Osu Studio Drama · Scene 09",
+    shortLabel: "Accra · English",
     sourceLabel: "Ghanaian English · Creator Studio",
     languageTag: "en-GH",
     city: "Accra",
@@ -115,8 +119,8 @@ export function getClipSpec(clipId: string): ShowcaseClipSpec | undefined {
 }
 
 /**
- * Produces word-level ASR output with exact WAV timestamps and realistic confidence scores.
- * Deterministic hash-based confidence jitter for normal words (0.89 to 0.98) so every run is reproducible.
+ * Produces word-level ASR output with exact WAV timestamps, preserved trailing sentence
+ * punctuation, and realistic confidence scores.
  */
 export function buildShowcaseTranscript(
   clipId: string,
@@ -132,12 +136,17 @@ export function buildShowcaseTranscript(
   }
 
   const words: CaptionWord[] = timings.words.map((w, idx) => {
+    const start = Math.min(timings.duration - 0.15, Math.max(0.05, w.start));
     const nextStart =
       idx < timings.words.length - 1
         ? timings.words[idx + 1].start
         : timings.duration;
-    const end = Number(Math.max(w.start + 0.16, nextStart - 0.02).toFixed(3));
-    const cleanKey = w.text.replace(/[.,!?]/g, "");
+    const end = Number(
+      Math.min(timings.duration, Math.max(start + 0.14, nextStart - 0.02)).toFixed(3)
+    );
+    const punctMatch = w.text.match(/[.,!?]+$/);
+    const trailingPunct = punctMatch ? punctMatch[0] : "";
+    const cleanKey = w.text.replace(/[.,!?]+$/g, "");
 
     let aiText = w.text;
     let confidence = Number(
@@ -146,19 +155,19 @@ export function buildShowcaseTranscript(
 
     const err = spec.asrErrors[cleanKey];
     if (err) {
-      aiText = err.aiText;
+      aiText = `${err.aiText}${trailingPunct}`;
       confidence = err.confidence;
     } else if (
       spec.overconfidentMistake &&
       cleanKey === spec.overconfidentMistake.referenceWord
     ) {
-      aiText = spec.overconfidentMistake.aiText;
+      aiText = `${spec.overconfidentMistake.aiText}${trailingPunct}`;
       confidence = spec.overconfidentMistake.confidence;
     }
 
     return {
       index: idx,
-      start: w.start,
+      start: Number(start.toFixed(3)),
       end,
       aiText,
       currentText: aiText,
@@ -176,8 +185,7 @@ export function buildShowcaseTranscript(
 
 /**
  * Generates word-level transcript for custom user-uploaded audio clips when no external Whisper
- * API key is configured. Uses the client-supplied transcript text (e.g., from Web Speech API
- * or user prompt) or creates calibrated placeholder segments transparently labeled as local ASR.
+ * API key is configured. Uses the client-supplied transcript text or creates placeholder segments.
  */
 export function buildCustomTranscript(params: {
   durationSeconds: number;
@@ -192,10 +200,11 @@ export function buildCustomTranscript(params: {
   const tokens = text.split(/\s+/).filter(Boolean);
   const step = Math.max(params.durationSeconds / Math.max(tokens.length, 1), 0.25);
 
-  // Flag proper nouns / capitalized non-initial tokens or longer unfamiliar words below threshold
   return tokens.map((token, idx) => {
     const start = Number((idx * step).toFixed(2));
-    const end = Number(Math.min(params.durationSeconds, (idx + 1) * step - 0.03).toFixed(2));
+    const end = Number(
+      Math.min(params.durationSeconds, (idx + 1) * step - 0.03).toFixed(2)
+    );
     const clean = token.replace(/[.,!?]/g, "");
     const looksLikeProperNoun = idx > 0 && /^[A-Z]/.test(clean) && clean.length >= 4;
     const isLongUncommon = clean.length >= 9 && idx % 4 === 1;
