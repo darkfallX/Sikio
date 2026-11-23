@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Outfit, JetBrains_Mono } from "next/font/google";
+import { Outfit, JetBrains_Mono, VT323 } from "next/font/google";
 import "./globals.css";
 import { WalletProvider } from "@/components/WalletContext";
 import { TopNav } from "@/components/TopNav";
@@ -10,7 +10,7 @@ const outfit = Outfit({
   subsets: ["latin"],
   variable: "--font-outfit",
   display: "swap",
-  weight: ["400", "500", "600", "700"],
+  weight: ["400", "500", "600", "700", "800"],
 });
 
 const jetbrainsMono = JetBrains_Mono({
@@ -20,23 +20,42 @@ const jetbrainsMono = JetBrains_Mono({
   weight: ["400", "500", "600"],
 });
 
+const vt323 = VT323({
+  subsets: ["latin"],
+  variable: "--font-vt323",
+  display: "swap",
+  weight: ["400"],
+});
+
 export const metadata: Metadata = {
   title: {
-    default: "Sikio — AI Captions for African Voices on QDay Aevum",
+    default: "Sikio · AI captions for African voices on QDay Aevum",
     template: "%s · Sikio",
   },
   description:
-    "AI captions for African voices. When ASR is uncertain, Sikio hires a native speaker for those few seconds and pays them once in tUSD8 on QDay Aevum.",
+    "AI captions for African voices. Hire a native speaker for uncertain seconds and pay once in tUSD8 on QDay Aevum.",
   metadataBase: new URL(
     process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"
   ),
   openGraph: {
-    title: "Sikio — AI Captions for African Voices",
+    title: "Sikio · AI captions for African voices",
     description:
-      "Upload a clip. Get publishable subtitles. Pay for the human ear only where the AI needed it, settled in tUSD8 on QDay Aevum.",
+      "Pay for the human ear only where AI hesitates, settled once in tUSD8 on QDay Aevum.",
     type: "website",
   },
 };
+
+const THEME_INIT_SCRIPT = `
+(function(){
+  try {
+    var saved = localStorage.getItem('sikio-theme');
+    var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (saved === 'dark' || (!saved && prefersDark)) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  } catch (e) {}
+})();
+`;
 
 export default function RootLayout({
   children,
@@ -44,46 +63,47 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${outfit.variable} ${jetbrainsMono.variable}`}>
-      <body className="min-h-screen flex flex-col bg-[#F4F1EA] text-[#141311]">
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${outfit.variable} ${jetbrainsMono.variable} ${vt323.variable}`}
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
+      <body className="min-h-screen flex flex-col bg-[var(--bg)] text-[var(--ink)]">
         <WalletProvider>
           <TopNav />
-          <main className="flex-1 w-full max-w-[1320px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+          <main className="flex-1 w-full max-w-[1240px] mx-auto px-4 sm:px-7 py-8 sm:py-12">
             {children}
           </main>
-          <footer className="border-t border-[#DDD7CA] bg-[#FBF9F4] mt-16">
-            <div className="max-w-[1320px] mx-auto px-4 sm:px-6 lg:px-8 py-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-[#5C574E]">
+          <footer className="hairline-t bg-[var(--paper)] mt-24">
+            <div className="max-w-[1240px] mx-auto px-4 sm:px-7 py-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-[var(--mute)]">
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                <span className="font-semibold text-[#141311]">Sikio</span>
-                <span>QDay Aevum Testnet (Chain 44005)</span>
+                <span className="font-semibold text-[var(--ink)]">Sikio</span>
+                <span className="font-mono tabular-nums">Aevum testnet · 44005</span>
                 <a
                   href={explorerAddressUrl(AEVUM_CONFIG.reviewEscrowAddress)}
                   target="_blank"
                   rel="noreferrer"
-                  className="font-mono hover:text-[#141311] underline-offset-2 hover:underline"
+                  className="font-mono hover:text-[var(--ink)] underline-offset-2 hover:underline"
                 >
-                  ReviewEscrow {shortAddr(AEVUM_CONFIG.reviewEscrowAddress)}
+                  Escrow {shortAddr(AEVUM_CONFIG.reviewEscrowAddress)}
                 </a>
-                <span className="font-mono">tUSD8 · 0x4565…3483</span>
+                <span className="font-mono">tUSD8</span>
               </div>
-              <div className="flex items-center gap-4">
-                <Link
-                  href="/legal/terms"
-                  className="hover:text-[#141311] underline-offset-2 hover:underline"
-                >
+              <div className="flex items-center gap-5">
+                <Link href="/legal/terms" className="hover:text-[var(--ink)]">
                   Terms
                 </Link>
-                <Link
-                  href="/legal/privacy"
-                  className="hover:text-[#141311] underline-offset-2 hover:underline"
-                >
+                <Link href="/legal/privacy" className="hover:text-[var(--ink)]">
                   Privacy
                 </Link>
                 <a
                   href="https://explorer-test.qday.info"
                   target="_blank"
                   rel="noreferrer"
-                  className="hover:text-[#141311] underline-offset-2 hover:underline"
+                  className="hover:text-[var(--ink)]"
                 >
                   Explorer
                 </a>
@@ -91,7 +111,7 @@ export default function RootLayout({
                   href="https://faucet.qday.info/en"
                   target="_blank"
                   rel="noreferrer"
-                  className="hover:text-[#141311] underline-offset-2 hover:underline"
+                  className="hover:text-[var(--ink)]"
                 >
                   Faucet
                 </a>

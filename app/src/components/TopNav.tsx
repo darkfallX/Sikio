@@ -6,12 +6,7 @@ import { usePathname } from "next/navigation";
 import { useWallet } from "./WalletContext";
 import { shortAddr } from "@/lib/aevum";
 import { SikioMark } from "./SikioMark";
-import {
-  AudioWaveform,
-  Headphones,
-  CheckSquare,
-  ReceiptText,
-} from "lucide-react";
+import { ThemeToggle } from "./ThemeToggle";
 
 interface NavCounts {
   openEar: number;
@@ -19,10 +14,10 @@ interface NavCounts {
 }
 
 const NAV_ITEMS = [
-  { href: "/", label: "Studio", step: "01", icon: AudioWaveform },
-  { href: "/ear", label: "Ear", step: "02", icon: Headphones },
-  { href: "/approve", label: "Approve", step: "03", icon: CheckSquare },
-  { href: "/receipts", label: "Receipts", step: "04", icon: ReceiptText },
+  { href: "/", label: "Studio" },
+  { href: "/ear", label: "Ear" },
+  { href: "/approve", label: "Approve" },
+  { href: "/receipts", label: "Receipts" },
 ];
 
 export function TopNav() {
@@ -57,7 +52,7 @@ export function TopNav() {
           waitingApprove: json.tasks.filter((t) => t.status === "submitted").length,
         });
       } catch {
-        // Silent nav count sync failure
+        // Ignore transient sync error
       }
     };
     syncCounts();
@@ -76,60 +71,44 @@ export function TopNav() {
   };
 
   return (
-    <header className="sticky top-0 z-30 border-b border-[#DDD7CA] bg-[#FBF9F4]">
-      <div className="max-w-[1320px] mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-6">
-          <Link
-            href="/"
-            className="flex items-center gap-2.5 shrink-0 group"
-          >
-            <SikioMark className="w-7 h-7 transition-transform duration-150 group-hover:scale-[1.03]" />
-            <div className="flex items-baseline gap-2">
-              <span className="text-[17px] font-semibold tracking-[-0.025em] text-[#141311]">
-                Sikio
-              </span>
-              <span className="hidden lg:inline text-[11px] font-mono uppercase tracking-[0.06em] text-[#847D72]">
-                Aevum · 44005
-              </span>
-            </div>
+    <header
+      style={{ backgroundColor: "var(--header-bg)" }}
+      className="sticky top-0 z-30 hairline-b backdrop-blur-md"
+    >
+      <div className="max-w-[1240px] mx-auto px-4 sm:px-7 h-15 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-6 min-w-0">
+          <Link href="/" className="flex items-center gap-2 shrink-0">
+            <SikioMark className="w-6 h-6 text-[var(--ink)]" />
+            <span className="text-[18px] font-extrabold tracking-[-0.03em] text-[var(--ink)]">
+              Sikio
+            </span>
           </Link>
 
-          <nav
-            aria-label="Primary workflow"
-            className="hidden md:flex items-center gap-1 border-l border-[#DDD7CA] pl-5"
-          >
+          <nav aria-label="Primary" className="hidden md:flex items-center gap-1">
             {NAV_ITEMS.map((item) => {
               const active =
                 item.href === "/"
                   ? pathname === "/"
                   : pathname.startsWith(item.href);
-              const Icon = item.icon;
               const badge = badgeFor(item.href);
               return (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[5px] text-[13px] font-medium transition-colors ${
+                  aria-current={active ? "page" : undefined}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-[14px] font-medium transition-colors ${
                     active
-                      ? "bg-[#141311] text-[#FBF9F4]"
-                      : "text-[#5C574E] hover:text-[#141311] hover:bg-[#EBE6DB]"
+                      ? "bg-[var(--ink)] text-[var(--paper)]"
+                      : "text-[var(--ink-2)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"
                   }`}
                 >
-                  <span
-                    className={`font-mono text-[10px] ${
-                      active ? "text-[#C94A22]" : "text-[#847D72]"
-                    }`}
-                  >
-                    {item.step}
-                  </span>
-                  <Icon className="w-3.5 h-3.5" strokeWidth={1.9} />
                   <span>{item.label}</span>
                   {badge > 0 && (
                     <span
-                      className={`ml-0.5 px-1.5 py-[1px] rounded-[3px] font-mono text-[10px] font-semibold tabular-nums ${
+                      className={`px-1.5 py-[1px] rounded-full font-mono text-[10px] font-semibold tabular-nums ${
                         active
-                          ? "bg-[#C94A22] text-[#FBF9F4]"
-                          : "bg-[#FAEAE4] text-[#C94A22]"
+                          ? "bg-[var(--signal)] text-[#faf8f2]"
+                          : "bg-[var(--signal-bg)] text-[var(--signal-ink)]"
                       }`}
                     >
                       {badge}
@@ -141,20 +120,19 @@ export function TopNav() {
           </nav>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {address ? (
             <div className="flex items-center gap-2">
               {!isAevum ? (
                 <button
                   type="button"
                   onClick={switchToAevum}
-                  className="px-2.5 py-1.5 rounded-[5px] text-xs font-medium bg-[#FAEAE4] text-[#C94A22] border border-[#E8C5B8] hover:bg-[#F5DDD4] transition-colors cursor-pointer"
+                  className="h-9 px-3 rounded-[8px] text-xs font-medium bg-[var(--signal-bg)] text-[var(--signal-ink)] cursor-pointer"
                 >
-                  Switch to Aevum
+                  Switch chain
                 </button>
               ) : (
-                <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[5px] text-xs font-mono font-medium bg-[#E7F4ED] text-[#1B6B46] border border-[#C3E2D1] tabular-nums">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#1B6B46]" />
+                <span className="hidden sm:inline-flex items-center gap-1.5 h-9 px-3 rounded-full font-mono text-xs font-medium bg-[var(--green-bg)] text-[var(--green)] tabular-nums">
                   {tusd8Balance ?? "0.00"} tUSD8
                 </span>
               )}
@@ -162,59 +140,50 @@ export function TopNav() {
                 type="button"
                 onClick={disconnect}
                 title="Disconnect wallet"
-                className="px-2.5 py-1.5 rounded-[5px] text-xs font-mono text-[#141311] bg-[#EBE6DB] border border-[#DDD7CA] hover:border-[#C7BFB0] transition-colors cursor-pointer"
+                className="h-9 px-3 rounded-[8px] font-mono text-xs hairline bg-[var(--paper)] text-[var(--ink)] hover:bg-[var(--hover)] cursor-pointer"
               >
                 {shortAddr(address)}
               </button>
             </div>
           ) : (
-            <div className="flex items-center gap-2">
-              <span
-                title="Live ReviewEscrow deployed on Aevum 44005 (0x36Cf...5E6b). Interactive browser flows run locally until wallet is connected."
-                className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[5px] text-[11px] font-mono text-[#5C574E] bg-[#EBE6DB] border border-[#DDD7CA]"
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-[#1B6B46]" />
-                0x36Cf…5E6b
-              </span>
-              <button
-                type="button"
-                disabled={connecting}
-                onClick={connectWallet}
-                className="px-3 py-1.5 rounded-[5px] text-xs font-medium bg-[#141311] text-[#FBF9F4] hover:bg-[#2B2926] transition-colors disabled:opacity-50 cursor-pointer"
-              >
-                {connecting ? "Connecting…" : "Connect Wallet"}
-              </button>
-            </div>
+            <button
+              type="button"
+              disabled={connecting}
+              onClick={connectWallet}
+              className="h-10 sm:h-9 px-3.5 rounded-[8px] text-xs font-semibold bg-[var(--ink)] text-[var(--paper)] hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer"
+            >
+              {connecting ? "Connecting…" : "Connect"}
+            </button>
           )}
+          <ThemeToggle />
         </div>
       </div>
 
-      {/* Mobile bottom-thumb workflow strip */}
+      {/* Mobile navigation bar: 44px touch targets, fits cleanly at 375px */}
       <nav
-        aria-label="Mobile workflow"
-        className="md:hidden border-t border-[#DDD7CA] px-2 py-1.5 grid grid-cols-4 gap-1 bg-[#FBF9F4]"
+        aria-label="Mobile"
+        className="md:hidden hairline-t px-2 py-1 grid grid-cols-4 gap-1 bg-[var(--paper)]"
       >
         {NAV_ITEMS.map((item) => {
           const active =
             item.href === "/"
               ? pathname === "/"
               : pathname.startsWith(item.href);
-          const Icon = item.icon;
           const badge = badgeFor(item.href);
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`relative flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-[5px] text-[11px] font-medium ${
+              aria-current={active ? "page" : undefined}
+              className={`min-h-[44px] flex items-center justify-center gap-1 rounded-[8px] text-[13px] font-medium transition-colors ${
                 active
-                  ? "bg-[#141311] text-[#FBF9F4]"
-                  : "text-[#5C574E]"
+                  ? "bg-[var(--ink)] text-[var(--paper)]"
+                  : "text-[var(--ink-2)]"
               }`}
             >
-              <Icon className="w-3.5 h-3.5" strokeWidth={1.9} />
               <span>{item.label}</span>
               {badge > 0 && (
-                <span className="absolute top-1 right-2 px-1 rounded-[3px] bg-[#C94A22] text-[#FBF9F4] font-mono text-[9px] font-semibold">
+                <span className="px-1.5 rounded-full bg-[var(--signal)] text-[#faf8f2] font-mono text-[10px] font-semibold tabular-nums">
                   {badge}
                 </span>
               )}

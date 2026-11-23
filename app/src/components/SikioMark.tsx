@@ -5,33 +5,31 @@ interface SikioMarkProps {
 }
 
 /**
- * Custom geometric acoustic-ear brand mark for Sikio (Swahili: "ear").
- * Outer listening arc + inner focal pin + live terracotta signal bar.
+ * Minimal brand mark: ink acoustic arc paired with one signal orange dot.
  */
-export function SikioMark({ className = "w-7 h-7" }: SikioMarkProps) {
+export function SikioMark({ className = "w-6 h-6" }: SikioMarkProps) {
   return (
     <svg
-      viewBox="0 0 28 28"
+      viewBox="0 0 24 24"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
       className={className}
     >
-      <rect width="28" height="28" rx="6" fill="#141311" />
       <path
-        d="M14 6.25C9.72 6.25 6.25 9.72 6.25 14C6.25 18.28 9.72 21.75 14 21.75"
-        stroke="#FBF9F4"
-        strokeWidth="2.1"
+        d="M12.5 3.5C7.8 3.5 4 7.3 4 12C4 16.7 7.8 20.5 12.5 20.5"
+        stroke="currentColor"
+        strokeWidth="2.2"
         strokeLinecap="round"
       />
       <path
-        d="M14 9.75C11.65 9.75 9.75 11.65 9.75 14C9.75 16.35 11.65 18.25 14 18.25"
-        stroke="#A69F93"
-        strokeWidth="1.9"
+        d="M12.5 7.5C10 7.5 8 9.5 8 12C8 14.5 10 16.5 12.5 16.5"
+        stroke="currentColor"
+        strokeWidth="1.8"
         strokeLinecap="round"
+        opacity="0.55"
       />
-      <rect x="15.2" y="10.2" width="2.4" height="7.6" rx="1.2" fill="#C94A22" />
-      <rect x="19.3" y="12.2" width="2.2" height="3.6" rx="1.1" fill="#FBF9F4" />
+      <circle cx="16.5" cy="12" r="2.75" fill="var(--signal)" />
     </svg>
   );
 }
