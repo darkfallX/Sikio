@@ -1,31 +1,23 @@
 import type { Metadata } from "next";
-import { Fraunces, Outfit, JetBrains_Mono } from "next/font/google";
+import { Hanken_Grotesk, Fragment_Mono } from "next/font/google";
 import "./globals.css";
 import { WalletProvider } from "@/components/WalletContext";
 import { TopNav } from "@/components/TopNav";
 import { AEVUM_CONFIG, explorerAddressUrl, shortAddr } from "@/lib/aevum";
 import Link from "next/link";
 
-const fraunces = Fraunces({
+const hanken = Hanken_Grotesk({
   subsets: ["latin"],
-  variable: "--font-fraunces",
-  display: "swap",
-  weight: ["500", "600", "700"],
-  style: ["normal", "italic"],
-});
-
-const outfit = Outfit({
-  subsets: ["latin"],
-  variable: "--font-outfit",
+  variable: "--font-hanken",
   display: "swap",
   weight: ["400", "500", "600", "700", "800"],
 });
 
-const jetbrainsMono = JetBrains_Mono({
+const fragmentMono = Fragment_Mono({
   subsets: ["latin"],
-  variable: "--font-jetbrains-mono",
+  variable: "--font-fragment-mono",
   display: "swap",
-  weight: ["400", "500", "600"],
+  weight: ["400"],
 });
 
 export const metadata: Metadata = {
@@ -67,7 +59,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${fraunces.variable} ${outfit.variable} ${jetbrainsMono.variable}`}
+      className={`${hanken.variable} ${fragmentMono.variable}`}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
@@ -75,13 +67,13 @@ export default function RootLayout({
       <body className="min-h-screen flex flex-col bg-[var(--bg)] text-[var(--ink)]">
         <WalletProvider>
           <TopNav />
-          <main className="flex-1 w-full max-w-[1240px] mx-auto px-4 sm:px-7 py-6 sm:py-9">
+          <main className="flex-1 w-full max-w-[1280px] mx-auto px-4 sm:px-7 py-6 sm:py-8">
             {children}
           </main>
           <footer className="hairline-t bg-[var(--paper)] mt-16">
-            <div className="max-w-[1240px] mx-auto px-4 sm:px-7 py-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-[var(--mute)]">
+            <div className="max-w-[1280px] mx-auto px-4 sm:px-7 py-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-[var(--mute)]">
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                <span className="font-editorial font-bold text-[var(--ink)]">
+                <span className="font-extrabold tracking-[-0.02em] text-[var(--ink)]">
                   Sikio
                 </span>
                 <span className="font-mono tabular-nums">Aevum testnet · 44005</span>
