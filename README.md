@@ -21,7 +21,7 @@ Built for **Aevum Builder Challenge #1** (QDay / PQA Labs · DoraHacks) — **Na
 2. **Buy AI Transcription over HTTP 402 (`x402`):** Sikio Agent calls `/api/transcribe` (self-hosted and labelled as ours) → receives `HTTP 402 Payment Required` (`eip155:44005`, `tUSD8`, `0.04 tUSD8`) → pays inside its approved budget → retries with `X-PAYMENT` proof → receives `200 OK` timed word-level probabilities.
 3. **Reserve Micro-Review Fees (`ReviewEscrow.offerTask`):** Uncertain spans below the confidence floor are clustered into 3–6s excerpts, and exact `tUSD8` fees are locked in escrow.
 4. **Native-Speaker Fix (`Ear` — Mobile Web, Zero Gas):** The assigned editor hears **only the server-sliced WAV excerpt** (`/api/excerpt/[clipId]`, hard-clamped `<= 12s` for client confidentiality), edits the misheard word or confirms the AI guess, and submits with zero crypto jargon and zero `tQDAY` gas required (via EIP-712 `submitCorrectionBySig`).
-5. **Approve & Pay Once (`Approve`):** The agency's named approver listens to the excerpt, checks the before/after diff, and clicks **Accept & Pay Once** (`ReviewEscrow.acceptTask`). The editor receives `tUSD8` **exactly once**; rejected or expired tasks return fees to the batch budget.
+5. **Approve & Pay Once (`Approve`):** The agency's named approver listens to the excerpt, checks the before/after diff, and clicks **Approve and pay** (`ReviewEscrow.acceptTask`). The editor receives `tUSD8` **exactly once**; rejected or expired tasks return fees to the batch budget.
 6. **Replay, Export & Audit (`Studio` + `Receipts`):** Corrections merge into the exact caption timestamps immediately. Replay synchronized audio + subtitles, download `.srt` / `.vtt`, and audit cost per publishable minute, explorer receipts, and A/B benchmark metrics.
 
 ---
@@ -38,9 +38,10 @@ Built for **Aevum Builder Challenge #1** (QDay / PQA Labs · DoraHacks) — **Na
 ├── app/                         # Next.js 15 + TypeScript + Tailwind v4 + viem web app
 │   ├── public/clips/            # 3 real spoken WAV clips (Lagos, Nairobi, Accra) + exact timings
 │   └── src/
-│       ├── app/                 # Studio (/), Ear (/ear), Approve (/approve), Receipts (/receipts), Legal
+│       ├── app/page.tsx         # Landing page (/)
+│       ├── app/(app)/           # Studio (/studio), Ear (/ear), Approve (/approve), Receipts (/receipts), Legal
 │       ├── app/api/             # x402 /api/transcribe, /api/excerpt WAV slicer, /api/jobs, /api/tasks
-│       ├── components/          # WaveformPlayer, CaptionTimeline, BudgetRail, WalletContext, TopNav
+│       ├── components/          # ui.tsx, art.tsx, TopNav, WaveformPlayer, landing/, studio/, ear/, approve/, receipts/
 │       └── lib/                 # aevum.ts, x402.ts, captions.ts, clips.ts, store.ts
 ├── docs/
 │   ├── ARCHITECTURE.md
@@ -131,18 +132,22 @@ Reproducible via `cd contracts && REVIEW_ESCROW_ADDRESS=0x36Cf1caB839bf01306E647
 
 ---
 
-## Live 3–5 Minute Judge Demo Script
+## Judge Demo Script (3 to 5 minutes)
 
-1. **Studio (`/`):** Pick the *Lagos · en-NG / pcm* clip (or upload your own audio). Click **Run Agent**.
-   - Show the live `HTTP 402 → 0.04 tUSD8 → 200 OK` x402 handshake.
-   - Play the audio and point to highlighted uncertain words (*"Pay stark"*, *"Yabba"*, *"wall holler"*, *"down for"*) and the budget bar showing reserved `tUSD8`.
-2. **Ear (`/ear`):** Open the mobile-first editor view for *Chidinma · Lagos*.
-   - Play the 3-second isolated WAV excerpt (note in DevTools: `/api/excerpt` returns ONLY that 3s slice, never the full recording).
-   - Fix `"Pay stark"` → `"Paystack"` and click **Submit Fix** (zero gas, zero crypto terms).
-3. **Approve (`/approve`):** Verify the diff + excerpt, click **Accept & Pay 0.25**.
-   - `tUSD8` pays once; budget moves from Reserved to Settled.
-4. **Replay & Export (`/`):** Return to Studio, replay the clip — `"Paystack"` now appears at the exact millisecond spoken in green. Click **Export .srt** to download publishable subtitles.
-5. **Receipts & Safety (`/receipts`):** Show itemized payment ledger, click **Probe Double-Pay Rejection** to demonstrate exact-once safety live, and review the transparent A/B benchmark table (including overconfident AI misses).
+Open the app without a wallet and every step runs in sandbox, clearly labelled as sandbox. To sign real transactions, connect a wallet on chain 44005 and switch the top bar from **Sandbox** to **Live tx**.
+
+1. **Landing (`/`):** Click **Open the demo**.
+2. **Studio (`/studio`):** Keep the **Lagos · Pidgin** clip and click **Run agent**.
+   - The x402 receipt shows **402 then 200**: the agent paid `0.04 tUSD8` for the transcript.
+   - Five unsure words land in **Needs an ear** (*"Tuesday from Yabba"*, *"Pay stark"*, *"Nara"*, *"wall holler"*, *"down for"*), and `0.50 tUSD8` is held for native speakers.
+   - **Cost per minute** compares Sikio with a full human pass.
+3. **Ear (`/ear`):** The phone-first editor view. Step to *"Pay stark"* with the arrows and play the voice note.
+   - The editor hears only a short slice around the word, never more than 12 seconds. In DevTools, `/api/excerpt` returns that slice, never the full recording.
+   - Type `Paystack` and press **Send answer, pays $0.10**. No gas and no crypto words.
+4. **Approve (`/approve`):** Press **Hear 1.9 seconds** to check the slice, then **Approve and pay 0.10**.
+   - The word moves to **Settled** as **Paid once**.
+5. **Replay and export (`/studio`):** Follow **Replay fixed captions**. *"Paystack"* now sits at the exact time it was spoken. Download **.srt** or **.vtt**.
+6. **Receipts (`/receipts`):** Every payment is itemised. Sandbox receipts are marked sandbox, and the live testnet proofs link to the explorer. Press **Try to pay twice**: the server refuses with **HTTP 400** because each `taskId` pays once. Finish on the **A/B review benchmark**, including the misses where the AI was wrongly confident.
 
 ---
 
@@ -153,7 +158,31 @@ Reproducible via `cd contracts && REVIEW_ESCROW_ADDRESS=0x36Cf1caB839bf01306E647
 - **QDay SDK / Bundler status:** `@qday-io/sdk` and public Aevum Alto bundler URLs are scheduled for Q1 2027 (`qday-io/qday-wiki`). `ReviewEscrow.sol` enforces batch caps, expiry, allowlists, and EIP-712 gasless submissions directly on Aevum Testnet today.
 - **Overconfident AI errors:** Targeted review misses errors where ASR scores above the agency's confidence floor; this rate is measured and published in `/receipts` and [`docs/BENCHMARK.md`](docs/BENCHMARK.md).
 - **Self-hosted transcription endpoint:** `/api/transcribe` is operated by Sikio and explicitly labelled as ours.
+- **Demo clips use a prepared transcript:** For the three showcase clips, `/api/transcribe` returns fixed word timings and confidences from `app/public/clips/timings.json`. The misheard words are hand-written to reflect the error patterns reported in AfriSpeech-MultiBench. The app labels this **Sikio Local ASR Engine (prepared demo transcript)**. Uploaded audio goes to the OpenAI Whisper API only when `OPENAI_API_KEY` is set; otherwise the local engine handles it and says so.
 - **Chain proves payment, not correctness:** The named approver attests to linguistic quality.
+
+---
+
+## Credits and Third-Party Software
+
+Sikio's own code is MIT licensed (see [LICENSE](LICENSE)). It builds on these open-source packages:
+
+| Package | Used for | License |
+|---|---|---|
+| [Next.js](https://nextjs.org) `15.5` | Web app framework | MIT |
+| [React](https://react.dev) and React DOM `19` | UI | MIT |
+| [viem](https://viem.sh) `2` | Wallet, contract calls and EIP-712 signing on chain 44005 | MIT |
+| [Motion](https://motion.dev) `12` | Animation | MIT |
+| [Lucide](https://lucide.dev) | Icons | ISC |
+| [Tailwind CSS](https://tailwindcss.com) `4` | Styling | MIT |
+| [Vitest](https://vitest.dev), [TypeScript](https://www.typescriptlang.org), [ESLint](https://eslint.org) | Tests, types and linting | MIT, Apache 2.0, MIT |
+| [OpenZeppelin Contracts](https://www.openzeppelin.com/contracts) `5.1` | SafeERC20 transfers, EIP-712 and ECDSA signatures, and ReentrancyGuard in `ReviewEscrow.sol` | MIT |
+| [Hardhat](https://hardhat.org) and Hardhat Toolbox | Contract tests and deployment | MIT |
+| dotenv, ts-node | Deploy script config and runtime | BSD 2-Clause, MIT |
+
+- **Fonts:** Space Grotesk and Space Mono from Google Fonts, under the SIL Open Font License 1.1.
+- **Network and test token:** QDay Aevum testnet and `tUSD8`, provided by QDay for the challenge.
+- **Research cited:** [AfriSpeech-MultiBench (2025)](https://arxiv.org/html/2511.14255v1) and [AfriSpeech-200](https://arxiv.org/abs/2310.00274).
 
 ---
 
