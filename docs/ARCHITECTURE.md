@@ -21,7 +21,7 @@ Native-Speaker Editor (Ear — Mobile Web, Zero Gas)
   │ 7. Listens, edits misheard word or confirms AI guess, submits (EIP-712 gasless relay)
   ▼
 Agency Approver (Approve)
-  │ 8. Verifies diff + audio excerpt, clicks Accept & Pay Once
+  │ 8. Verifies diff + audio excerpt, clicks Approve and pay
   │ 9. ReviewEscrow.acceptTask(taskId) pays editor EXACTLY ONCE in tUSD8
   ▼
 Caption Merge & Audit (Studio + Receipts)
@@ -48,9 +48,10 @@ We verified on-chain via `https://rpc-test.qday.info` that ERC-4337 `EntryPoint 
 
 - **Framework:** Next.js 15 App Router, React 19, TypeScript, Tailwind CSS v4, `viem`.
 - **Surfaces:**
-  - `/` (**Studio**): Clip picker (3 real spoken African-voice WAV clips + custom upload), confidence slider, waveform + live synced caption player, word-confidence transcript, budget rail, `.srt`/`.vtt` export, cost-per-minute summary.
+  - `/` (**Landing**): The story page, with a live fix-it demo, cost comparison and on-chain proof links.
+  - `/studio` (**Studio**): Clip picker (3 real spoken African-voice WAV clips + custom upload), confidence slider, waveform + live synced caption player, word-confidence transcript, budget rail, `.srt`/`.vtt` export, cost-per-minute summary.
   - `/ear` (**Ear**): Mobile-first editor UI with zero crypto jargon, excerpt-only WAV playback, one-tap fix submission, USD/tUSD8 earnings.
-  - `/approve` (**Approve**): Side-by-side AI vs. human diff, excerpt replay, Accept & Pay Once / Reject / Expire actions.
+  - `/approve` (**Approve**): Side-by-side AI vs. human diff, excerpt replay, Approve and pay / Reject / Return fee actions.
   - `/receipts` (**Receipts**): Full payment ledger with Aevum Explorer links, live double-pay rejection probe, and Decisive A/B Benchmark table.
 - **API Endpoints:**
   - `POST /api/transcribe`: Genuine HTTP `402 Payment Required` (`x402`) endpoint (self-hosted and labelled as ours). Verifies live Aevum tx receipts via `rpc-test.qday.info` when `mode === "aevum-live"`.
