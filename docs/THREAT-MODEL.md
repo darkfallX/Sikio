@@ -16,7 +16,7 @@
 | Threat | Impact | Mitigation in Sikio | Verified By |
 |---|---|---|---|
 | **Runaway or compromised AI agent** drains agency treasury | Financial loss | `maxBudget`, `maxTaskFee`, `expiry`, `enforceEditorAllowlist`, and instant `revokeAgent()` kill-switch on `ReviewEscrow.sol`. | Hardhat tests: budget cap, per-task cap, expiry, allowlist, kill-switch |
-| **Double payment / replay attack** on `acceptTask` or `payInference` | Duplicate `tUSD8` payout | `tasks[taskId].status` transitions terminally to `Accepted`; `inferencePaid[requestId]` boolean guard. Repeated calls revert. | Hardhat tests + live "Probe Double-Pay Rejection" button in `/receipts` |
+| **Double payment / replay attack** on `acceptTask` or `payInference` | Duplicate `tUSD8` payout | `tasks[taskId].status` transitions terminally to `Accepted`; `inferencePaid[requestId]` boolean guard. Repeated calls revert. | Hardhat tests + live "Try to pay twice" button in `/receipts` |
 | **Self-approval by editor or agent** | Fraudulent payout | `acceptTask` and `rejectTask` strictly require `msg.sender == batch.approver || msg.sender == batch.agency`. | Hardhat test: unauthorized approver rejection |
 | **Abandoned tasks locking agency funds forever** | Trapped escrow | Permissionless `expireTask(taskId)` after `task.expiry` returns `t.fee` from `reserved` back to `availableBudget`. | Hardhat test: expiry refund + late accept revert |
 | **Confidential client video leaked to freelance editor** | NDA / client breach | `/api/excerpt/[clipId]` slices raw PCM WAV bytes server-side and hard-clamps duration to `<= 12s`. Full audio is never sent to `/ear`. | HTTP header `X-Sikio-Excerpt-Only: true` & byte-length verification |
