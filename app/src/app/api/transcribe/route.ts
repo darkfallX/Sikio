@@ -160,7 +160,8 @@ export async function POST(req: NextRequest) {
         ? Math.min(0.95, Math.max(0.4, body.confidenceThreshold))
         : 0.78;
 
-    // Step 3: Showcase WAV clip (calibrated AfriSpeech-MultiBench test fixture)
+    // Step 3: Showcase WAV clip. Words and confidences come from a prepared fixture
+    // (clips/timings.json plus asrErrors in lib/clips.ts), not live model inference.
     if (body.clipId && getClipSpec(body.clipId)) {
       const { durationSeconds, words } = buildShowcaseTranscript(
         body.clipId,
@@ -170,7 +171,7 @@ export async function POST(req: NextRequest) {
         {
           ok: true,
           operator: "Sikio Transcription Service (self-hosted)",
-          engine: "Sikio AfriSpeech-calibrated ASR (word-level logprobs)",
+          engine: "Sikio Local ASR Engine (prepared demo transcript)",
           x402: {
             requestId: payment.requestId,
             txHash: payment.txHash,
