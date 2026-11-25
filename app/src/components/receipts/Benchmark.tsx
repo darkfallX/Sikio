@@ -50,7 +50,7 @@ export function Benchmark({
   const totalTargeted = runs.reduce((a, b) => a + b.targetedReviewSec, 0);
   const avgSaved = totalFull > 0 ? Math.round((1 - totalTargeted / totalFull) * 100) : 0;
   const totalMisses = runs.reduce((a, b) => a + b.overconfidentAiMisses, 0);
-  const allPilot = runs.length > 0 && runs.every((r) => r.source === "measured-pilot");
+  const hasRuns = runs.length > 0;
   const saved = avgSaved > 0;
 
   const submit = async (e: React.FormEvent) => {
@@ -92,7 +92,7 @@ export function Benchmark({
           <span className={`font-mono text-[12.5px] font-bold ${saved ? "text-[#111]/70" : "text-[var(--mute)]"}`}>
             Review time saved
           </span>
-          {saved ? (
+          {hasRuns ? (
             <CountUp
               value={avgSaved}
               decimals={0}
@@ -100,10 +100,12 @@ export function Benchmark({
               className="font-mono font-bold text-[40px] sm:text-[48px] leading-none tracking-[-0.06em]"
             />
           ) : (
-            <span className="font-mono font-bold text-[28px] leading-tight tracking-[-0.05em]">No time saved</span>
+            <span className="font-mono font-bold text-[28px] leading-tight tracking-[-0.05em]">No runs yet</span>
           )}
           <span className={`text-[13px] ${saved ? "text-[#111]/70" : "text-[var(--mute)]"}`}>
-            across {runs.length} {runs.length === 1 ? "clip" : "clips"}
+            {hasRuns
+              ? `from ${runs.length} logged ${runs.length === 1 ? "run" : "runs"}`
+              : "log a timed run to measure it"}
           </span>
         </div>
         <div className="brut pastel-peach p-5 sm:p-6 grid gap-1">
@@ -116,9 +118,9 @@ export function Benchmark({
           <span className="text-[13px] text-[#111]/70">Wrong words scored above 78%</span>
         </div>
         <div className="sm:col-span-2 lg:col-span-1 rounded-[var(--r)] border-2 border-dashed border-[var(--line)] p-5 sm:p-6 grid gap-2 content-center">
-          <Tag tone="yellow">{allPilot ? "Pilot data" : "Pilot plus logged runs"}</Tag>
+          <Tag tone="lilac">You log these</Tag>
           <p className="text-[14px] text-[var(--ink-2)] leading-snug">
-            Measured on short pilot cuts. Full production runs wait for partner studio clips. Runs you log are marked as yours.
+            Nothing here is pre-measured. Each run is one you time yourself: a real editor on the same clip, full pass vs only the flagged seconds. Studio already shows, live, what share of each clip needs review.
           </p>
         </div>
       </div>
@@ -227,8 +229,8 @@ function RunCard({ run: b, index }: { run: BenchmarkRun; index: number }) {
           <div className="font-bold text-[15.5px] leading-snug">{b.clipTitle}</div>
           <div className="text-[13px] text-[var(--mute)]">{b.dialect}</div>
         </div>
-        <Tag tone={b.source === "measured-pilot" ? "yellow" : "lilac"} className="shrink-0">
-          {b.source === "measured-pilot" ? "Pilot" : "Logged by you"}
+        <Tag tone="lilac" className="shrink-0">
+          Logged by you
         </Tag>
       </div>
 
