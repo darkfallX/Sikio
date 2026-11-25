@@ -52,7 +52,7 @@ We verified on-chain via `https://rpc-test.qday.info` that ERC-4337 `EntryPoint 
   - `/studio` (**Studio**): Clip picker (3 real spoken African-voice WAV clips + custom upload), confidence slider, waveform + live synced caption player, word-confidence transcript, budget rail, `.srt`/`.vtt` export, cost-per-minute summary.
   - `/ear` (**Ear**): Mobile-first editor UI with zero crypto jargon, excerpt-only WAV playback, one-tap fix submission, USD/tUSD8 earnings.
   - `/approve` (**Approve**): Side-by-side AI vs. human diff, excerpt replay, Approve and pay / Reject / Return fee actions.
-  - `/receipts` (**Receipts**): Full payment ledger with Aevum Explorer links, live double-pay rejection probe, and Decisive A/B Benchmark table.
+  - `/receipts` (**Receipts**): Full payment ledger with Aevum Explorer links, live double-pay rejection probe, and a user-logged A/B review-time tool (no pre-seeded results).
 - **API Endpoints:**
   - `POST /api/transcribe`: Genuine HTTP `402 Payment Required` (`x402`) endpoint (self-hosted and labelled as ours). Verifies live Aevum tx receipts via `rpc-test.qday.info` when `mode === "aevum-live"`.
   - `GET /api/excerpt/[clipId]?start=&end=`: Raw PCM RIFF/WAV byte slicer enforcing a strict `<= 12s` confidentiality ceiling.
