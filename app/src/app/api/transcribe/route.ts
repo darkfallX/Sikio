@@ -34,6 +34,7 @@ async function transcribeWithOpenAIWhisper(params: {
     form.append("model", "whisper-1");
     form.append("response_format", "verbose_json");
     form.append("timestamp_granularities[]", "word");
+    form.append("timestamp_granularities[]", "segment");
 
     const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
       method: "POST",
@@ -47,18 +48,37 @@ async function transcribeWithOpenAIWhisper(params: {
     const json = (await res.json()) as {
       duration?: number;
       words?: { word: string; start: number; end: number }[];
+      segments?: {
+        start: number;
+        end: number;
+        avg_logprob?: number;
+        no_speech_prob?: number;
+      }[];
     };
     if (!json.words || json.words.length === 0) return null;
+
+    const segments = json.segments || [];
+
+    // Real model confidence: Whisper reports an average token log-probability per
+    // segment. We convert it to a probability (exp) and dampen it when the segment
+    // is likely silence/noise. No capitalization or length heuristic is involved.
+    const confidenceAt = (t: number): number => {
+      const seg =
+        segments.find((s) => t >= s.start && t < s.end) ||
+        segments.find((s) => t <= s.end);
+      if (!seg || typeof seg.avg_logprob !== "number") return 0.8;
+      let conf = Math.exp(seg.avg_logprob);
+      if (typeof seg.no_speech_prob === "number" && seg.no_speech_prob > 0.5) {
+        conf *= 1 - seg.no_speech_prob;
+      }
+      return Number(Math.min(0.99, Math.max(0.05, conf)).toFixed(3));
+    };
 
     const durationSeconds = Number(
       (json.duration || json.words[json.words.length - 1].end || 15).toFixed(2)
     );
     const words: CaptionWord[] = json.words.map((w, idx) => {
-      const clean = w.word.replace(/[.,!?]/g, "");
-      const looksUnfamiliar =
-        (idx > 0 && /^[A-Z]/.test(clean) && clean.length >= 4) ||
-        clean.length >= 10;
-      const confidence = looksUnfamiliar ? 0.62 : 0.92;
+      const confidence = confidenceAt(w.start);
       return {
         index: idx,
         start: Number(w.start.toFixed(3)),
@@ -66,6 +86,7 @@ async function transcribeWithOpenAIWhisper(params: {
         aiText: w.word,
         currentText: w.word,
         confidence,
+        confidenceSource: "whisper-logprob",
         flagged: confidence < params.threshold,
       };
     });
@@ -203,7 +224,8 @@ export async function POST(req: NextRequest) {
           {
             ok: true,
             operator: "Sikio Transcription Service (self-hosted)",
-            engine: "OpenAI Whisper API (word-level via Sikio x402)",
+            engine:
+              "OpenAI Whisper API (word timings + segment log-probability confidence)",
             x402: {
               requestId: payment.requestId,
               txHash: payment.txHash,
@@ -225,7 +247,18 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Honest local ASR engine fallback
+    // Honest local ASR engine fallback: no neural model is available, so we never
+    // fabricate a transcript. A real transcript must be supplied; we then flag
+    // uncertain tokens with a transparent lexical heuristic (not a model score).
+    if (!body.customTranscript?.trim()) {
+      return NextResponse.json(
+        {
+          error:
+            "No transcript available. This upload has no Whisper key configured (set OPENAI_API_KEY) and no transcript was provided. Paste the clip's transcript so the local engine can flag uncertain words, or configure Whisper to transcribe the audio.",
+        },
+        { status: 400 }
+      );
+    }
     const durationSeconds = Math.max(
       3,
       Math.min(600, Number(body.customDurationSeconds || 15))
@@ -240,7 +273,8 @@ export async function POST(req: NextRequest) {
       {
         ok: true,
         operator: "Sikio Transcription Service (self-hosted)",
-        engine: "Sikio Local ASR Engine (no Whisper key configured)",
+        engine:
+          "Sikio Local ASR Engine (your transcript + lexical uncertainty heuristic)",
         x402: {
           requestId: payment.requestId,
           txHash: payment.txHash,
