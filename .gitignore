@@ -5,10 +5,11 @@ dist/
 cache/
 artifacts/
 typechain-types/
-app/data/sikio-state.json
+app/data/
 *.tsbuildinfo
 next-env.d.ts
 SIKIO-CONCEPT.md
 .env
 .env.local
 *.log
+.claude/
