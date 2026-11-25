@@ -146,54 +146,11 @@ function defaultState(): SikioState {
     },
   ];
 
-  // Transparent pilot A/B benchmark runs (including overconfident AI misses)
-  const benchmarks: BenchmarkRun[] = [
-    {
-      id: "bench-lagos-01",
-      clipTitle: "Tech Point Lagos (3m 10s pilot cut)",
-      dialect: "Nigerian English / Pidgin",
-      clipDurationSec: 190,
-      fullReviewSec: 465,
-      targetedReviewSec: 112,
-      fullReviewErrorsLeft: 1,
-      targetedReviewErrorsLeft: 2,
-      overconfidentAiMisses: 1,
-      fullReviewCostUsd: 11.08,
-      targetedCostUsd: 1.62,
-      recordedAt: "2026-11-19T14:20:00Z",
-      source: "measured-pilot",
-    },
-    {
-      id: "bench-nairobi-02",
-      clipTitle: "Nairobi Mobility Doc (2m 40s pilot cut)",
-      dialect: "Kenyan English / Swahili",
-      clipDurationSec: 160,
-      fullReviewSec: 390,
-      targetedReviewSec: 94,
-      fullReviewErrorsLeft: 0,
-      targetedReviewErrorsLeft: 1,
-      overconfidentAiMisses: 1,
-      fullReviewCostUsd: 9.33,
-      targetedCostUsd: 1.37,
-      recordedAt: "2026-11-19T16:45:00Z",
-      source: "measured-pilot",
-    },
-    {
-      id: "bench-accra-03",
-      clipTitle: "Osu Studio Drama (2m 05s pilot cut)",
-      dialect: "Ghanaian English",
-      clipDurationSec: 125,
-      fullReviewSec: 310,
-      targetedReviewSec: 78,
-      fullReviewErrorsLeft: 1,
-      targetedReviewErrorsLeft: 1,
-      overconfidentAiMisses: 0,
-      fullReviewCostUsd: 7.29,
-      targetedCostUsd: 1.12,
-      recordedAt: "2026-11-20T10:15:00Z",
-      source: "measured-pilot",
-    },
-  ];
+  // Sikio never ships fabricated "measured" results. Benchmarks start empty; a real
+  // A/B run is logged only after the user times a real editor (source "user-logged").
+  // The honest, automatic headline is the per-clip coverage metric in Studio
+  // ("humans skipped X% of the audio"), derived live from actual flagged spans.
+  const benchmarks: BenchmarkRun[] = [];
 
   return {
     batch,
@@ -559,6 +516,8 @@ export function acceptReviewTask(params: {
   txHash?: `0x${string}`;
   note?: string;
   mode?: ExecutionMode;
+  settledEditorAddress?: `0x${string}`;
+  onChainNote?: string;
 }): { state: SikioState; task: ReviewTask } {
   const state = readState();
   const approver = assertAuthorizedApprover(state, params.approverAddress);
@@ -584,6 +543,16 @@ export function acceptReviewTask(params: {
   const effectiveMode: ExecutionMode =
     params.txHash && params.mode === "aevum-live" ? "aevum-live" : "sandbox";
   const settleTxHash = params.txHash || makeSandboxTxHash(`accept:${task.id}`);
+
+  // On a real settlement the payout lands in the on-chain editor wallet. Record
+  // that address as the genuine recipient (the named reviewer stays the human identity).
+  if (
+    effectiveMode === "aevum-live" &&
+    params.settledEditorAddress &&
+    /^0x[0-9a-fA-F]{40}$/.test(params.settledEditorAddress)
+  ) {
+    task.editorAddress = params.settledEditorAddress;
+  }
 
   task.status = "accepted";
   task.approvedBy = approver;
@@ -628,8 +597,9 @@ export function acceptReviewTask(params: {
     settlementState: "settled",
     gasToken: effectiveMode === "aevum-live" ? "tUSD8 (sponsored)" : "sandbox",
     note:
-      params.note ||
-      `"${task.aiGuess}" → "${task.submittedText || task.aiGuess}" · Approved by ${approver.slice(0, 8)}…`,
+      (params.note ||
+        `"${task.aiGuess}" → "${task.submittedText || task.aiGuess}" · Approved by ${approver.slice(0, 8)}…`) +
+      (params.onChainNote ? ` · ${params.onChainNote}` : ""),
     timestamp: new Date().toISOString(),
   });
 
