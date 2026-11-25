@@ -1,0 +1,21 @@
+# Keep the Docker build context small and never bake secrets or heavy dirs into the image.
+.git
+.gitignore
+.claude
+contracts
+docs
+*.md
+Dockerfile
+.dockerignore
+render.yaml
+
+# Dependencies and build output are reinstalled/rebuilt inside the image.
+node_modules
+**/node_modules
+**/.next
+
+# Local state and any env files (runtime env comes from Render, not the image).
+**/data
+**/.env
+**/.env.*
+!**/.env.example
