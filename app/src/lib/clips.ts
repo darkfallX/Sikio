@@ -173,6 +173,7 @@ export function buildShowcaseTranscript(
       currentText: aiText,
       referenceText: w.text,
       confidence,
+      confidenceSource: "prepared-demo",
       flagged: confidence < confidenceThreshold,
     };
   });
@@ -184,18 +185,61 @@ export function buildShowcaseTranscript(
 }
 
 /**
- * Generates word-level transcript for custom user-uploaded audio clips when no external Whisper
- * API key is configured. Uses the client-supplied transcript text or creates placeholder segments.
+ * ~160 of the most common English function and content words. A token outside this
+ * list (and long enough to matter) is treated as out-of-vocabulary and worth a human
+ * glance. This deliberately leaves African names, places and slang unlisted, so they
+ * surface for review, which is exactly the point.
+ */
+const COMMON_ENGLISH_WORDS = new Set<string>(
+  (
+    "the a an and or but so if then than that this these those there here it its it's " +
+    "i you he she we they me him her us them my your his our their mine yours ours " +
+    "is am are was were be been being do does did done have has had having will would " +
+    "can could shall should may might must not no yes of to in on at by for from with " +
+    "about into over under again further once up down out off above below between " +
+    "as until while because since though although when where who whom which what why how " +
+    "all any both each few more most other some such only own same too very just " +
+    "one two three four five six seven eight nine ten first next last now today day " +
+    "time year years people way ways man woman thing things work life world hand hands part " +
+    "child eye eyes place places week month hour minute second moment night morning evening " +
+    "go goes going gone went come comes came get gets got getting make makes made making " +
+    "say says said saying see sees seen saw look looks looked looking watch watches " +
+    "know knows knew known think thinks thought take takes took taken give gives gave given " +
+    "want wants wanted need needs needed use uses used find finds found feel feels felt " +
+    "talk talks talking tell tells told ask asks asked call calls called turn turns turned " +
+    "put puts keep keeps kept let lets leave leaves left mean means meant show shows showed " +
+    "ride rides rode riding drive drives drove walk walks walked run runs ran eat eats ate " +
+    "road roads street streets house houses home homes room rooms door doors wall floor " +
+    "car cars bus buses train phone phones money market markets shop shops store food water " +
+    "school schools friend friends family name names number numbers back still even also " +
+    "after before through around without within every many much well bad great little lot " +
+    "kind sort side end top area case fact head face light air land sea sky sun rain tree " +
+    "big small old new long short high low early late good right wrong past next last same " +
+    "record recording studio partner payment payments local mobile scene drama podcast clip " +
+    "across our we're let's really you're they're i'm he's she's don't can't won't that's " +
+    "people person again always never often sometimes together along past near far behind"
+  ).split(/\s+/)
+);
+
+/**
+ * Word-level transcript for custom uploaded clips when no neural ASR (Whisper) is
+ * available. It NEVER fabricates audio content: a real transcript must be supplied
+ * (the caller returns a clear error otherwise). Uncertain tokens are flagged by a
+ * transparent lexical rule (out-of-vocabulary / proper noun / number), each tagged
+ * with its reason and `confidenceSource: "lexical-heuristic"` so it is never mistaken
+ * for a model probability.
  */
 export function buildCustomTranscript(params: {
   durationSeconds: number;
   rawTranscript?: string;
   confidenceThreshold: number;
 }): CaptionWord[] {
-  const text =
-    params.rawTranscript && params.rawTranscript.trim().length > 0
-      ? params.rawTranscript.trim()
-      : "Today we are recording from Lagos with our studio partner discussing local payment rails and mobile captions across West Africa.";
+  const text = params.rawTranscript?.trim();
+  if (!text) {
+    throw new Error(
+      "buildCustomTranscript requires a transcript: the local engine never fabricates audio content."
+    );
+  }
 
   const tokens = text.split(/\s+/).filter(Boolean);
   const step = Math.max(params.durationSeconds / Math.max(tokens.length, 1), 0.25);
@@ -205,14 +249,23 @@ export function buildCustomTranscript(params: {
     const end = Number(
       Math.min(params.durationSeconds, (idx + 1) * step - 0.03).toFixed(2)
     );
-    const clean = token.replace(/[.,!?]/g, "");
-    const looksLikeProperNoun = idx > 0 && /^[A-Z]/.test(clean) && clean.length >= 4;
-    const isLongUncommon = clean.length >= 9 && idx % 4 === 1;
-    const confidence = looksLikeProperNoun
-      ? 0.56
-      : isLongUncommon
-      ? 0.63
-      : Number((0.88 + ((idx * 13) % 10) * 0.01).toFixed(2));
+    const clean = token.replace(/[.,!?;:"'()]/g, "");
+    const lower = clean.toLowerCase();
+
+    let confidence = 0.9;
+    let flagReason: string | undefined;
+    if (clean.length === 0) {
+      confidence = 0.9;
+    } else if (/\d/.test(clean)) {
+      confidence = 0.6;
+      flagReason = "contains a number";
+    } else if (idx > 0 && /^[A-Z]/.test(clean) && clean.length >= 3) {
+      confidence = 0.6;
+      flagReason = "proper noun (capitalised mid-sentence)";
+    } else if (clean.length >= 4 && !COMMON_ENGLISH_WORDS.has(lower)) {
+      confidence = 0.66;
+      flagReason = "out-of-vocabulary word";
+    }
 
     return {
       index: idx,
@@ -221,6 +274,8 @@ export function buildCustomTranscript(params: {
       aiText: token,
       currentText: token,
       confidence,
+      confidenceSource: "lexical-heuristic",
+      flagReason,
       flagged: confidence < params.confidenceThreshold,
     };
   });
