@@ -26,14 +26,14 @@ export const metadata: Metadata = {
     template: "%s · Sikio",
   },
   description:
-    "AI captions for African voices. When the AI is unsure of a word, a native speaker hears just those seconds and is paid once in tUSD8 on QDay Aevum.",
+    "A pay-per-task stablecoin settlement app on QDay Aevum. A native speaker is paid once in tUSD8 for the exact seconds they fix in African-voice captions.",
   metadataBase: new URL(
     process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"
   ),
   openGraph: {
     title: "Sikio · Captions that hear Africa",
     description:
-      "Pay for the human ear only where AI hesitates, settled once in tUSD8 on QDay Aevum.",
+      "A pay-per-task settlement app on QDay Aevum. A native speaker is paid once in tUSD8 for the exact seconds they fix.",
     type: "website",
   },
 };
