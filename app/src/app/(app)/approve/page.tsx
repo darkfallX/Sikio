@@ -9,7 +9,7 @@ import React, {
 } from "react";
 import Link from "next/link";
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
-import { ArrowUpRight, Ear, RotateCw } from "lucide-react";
+import { ArrowUpRight, Ear, Loader2, RotateCw } from "lucide-react";
 import { BatchBudget, ReviewTask } from "@/lib/types";
 import { shortAddr } from "@/lib/aevum";
 import { useWallet } from "@/components/WalletContext";
@@ -39,14 +39,20 @@ export default function ApprovePage() {
   const [state, setState] = useState<ApproveState | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Whether the server can settle on-chain with its operator key (no wallet needed).
+  const [serverLive, setServerLive] = useState(false);
+  // Live settlement progress (0 reserve, 1 record, 2 pay) while the ~20s on-chain run happens.
+  const [settling, setSettling] = useState<{ step: number } | null>(null);
   const [busy, setBusy] = useState<{ id: string; action: TaskAction } | null>(
     null,
   );
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [playTime, setPlayTime] = useState(0);
-  const [banner, setBanner] = useState<{ text: string; paid: boolean } | null>(
-    null,
-  );
+  const [banner, setBanner] = useState<{
+    text: string;
+    paid: boolean;
+    txUrl?: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [celebrateId, setCelebrateId] = useState<string | null>(null);
   const [showAllSettled, setShowAllSettled] = useState(false);
@@ -72,6 +78,21 @@ export default function ApprovePage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Ask the server whether it can settle live on Aevum, so the badge reflects what
+  // Approve really does (a real on-chain payout), not whether a wallet is connected.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/settle", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (alive && j) setServerLive(Boolean(j.available));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!banner) return;
@@ -147,47 +168,81 @@ export default function ApprovePage() {
     setError(null);
     setBanner(null);
     setBusy({ id: task.id, action });
+    let stepTimer: ReturnType<typeof setInterval> | undefined;
     if (playingId === task.id) {
       audioRef.current?.pause();
       setPlayingId(null);
     }
     try {
-      let txHash: `0x${string}` | undefined;
-      let runMode: "aevum-live" | "sandbox" = "sandbox";
+      let json: {
+        error?: string;
+        mode?: "aevum-live" | "sandbox";
+        settlement?: { explorerTxUrl?: string };
+      };
 
-      if (action === "accept" && liveEscrowMode && address && isAevum) {
-        txHash = await acceptTaskOnChain(task.taskIdBytes32);
-        runMode = "aevum-live";
+      if (action === "accept" && !(liveEscrowMode && address && isAevum)) {
+        // No connected wallet: the server settles on-chain with the operator key.
+        // The approver pays once from the browser with no wallet, key, or extension.
+        // Walk the approver through the three real on-chain steps during the ~20s wait.
+        if (serverLive) {
+          setSettling({ step: 0 });
+          let s = 0;
+          stepTimer = setInterval(() => {
+            s = Math.min(2, s + 1);
+            setSettling({ step: s });
+          }, 6500);
+        }
+        const res = await fetch("/api/settle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ taskId: task.id }),
+        });
+        json = await res.json();
+        if (!res.ok) {
+          setError(json.error || "Could not settle this one. Nothing was paid.");
+          return;
+        }
+      } else {
+        let txHash: `0x${string}` | undefined;
+        let runMode: "aevum-live" | "sandbox" = "sandbox";
+
+        if (action === "accept" && liveEscrowMode && address && isAevum) {
+          txHash = await acceptTaskOnChain(task.taskIdBytes32);
+          runMode = "aevum-live";
+        }
+
+        const res = await fetch("/api/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action,
+            taskId: task.id,
+            approverAddress: address || state?.batch.approverAddress,
+            txHash,
+            mode: runMode,
+          }),
+        });
+        json = await res.json();
+        if (!res.ok) {
+          setError(
+            json.error ||
+              `Could not ${action === "accept" ? "approve" : "return"} this one.`,
+          );
+          return;
+        }
       }
 
-      const res = await fetch("/api/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action,
-          taskId: task.id,
-          approverAddress: address || state?.batch.approverAddress,
-          txHash,
-          mode: runMode,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        setError(
-          json.error ||
-            `Could not ${action === "accept" ? "approve" : "return"} this one.`,
-        );
-        return;
-      }
       setRecentIds((ids) => [task.id, ...ids.filter((id) => id !== task.id)]);
       await load();
       if (action === "accept") setCelebrateId(task.id);
       const fee = task.feeTusd8.toFixed(2);
+      const live = json.mode === "aevum-live";
       setBanner({
         paid: action === "accept",
+        txUrl: json.settlement?.explorerTxUrl,
         text:
           action === "accept"
-            ? `Paid ${task.editorName} ${fee} tUSD8 once. "${task.submittedText || task.aiGuess}" is now in the captions.`
+            ? `Paid ${task.editorName} ${fee} tUSD8 once${live ? " on Aevum" : ""}. "${task.submittedText || task.aiGuess}" is now in the captions.`
             : action === "reject"
               ? `Rejected "${task.submittedText || task.aiGuess}". ${fee} tUSD8 is back in the batch.`
               : `Returned ${fee} tUSD8 to the batch.`,
@@ -199,6 +254,8 @@ export default function ApprovePage() {
           : "Something went wrong. Nothing was paid.",
       );
     } finally {
+      if (stepTimer) clearInterval(stepTimer);
+      setSettling(null);
       setBusy(null);
     }
   };
@@ -234,7 +291,9 @@ export default function ApprovePage() {
     );
   }
 
-  const live = liveEscrowMode && !!address && isAevum;
+  // The badge reflects what Approve actually does: a real on-chain settlement, whether
+  // the approver connects a wallet or the server settles with its operator key.
+  const live = serverLive || (liveEscrowMode && !!address && isAevum);
   const nothingAnywhere =
     submittedQueue.length === 0 &&
     waitingEditors.length === 0 &&
@@ -291,6 +350,52 @@ export default function ApprovePage() {
       {/* Feedback: a floating outlined banner so it is seen wherever the approver has scrolled */}
       <div className="fixed z-40 bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 sm:w-[520px] grid gap-3 pointer-events-none [&>*]:pointer-events-auto">
         <AnimatePresence initial={false}>
+          {settling && (
+            <motion.div
+              key="settling"
+              initial={{ opacity: 0, y: 12, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.98 }}
+              transition={SPRING.soft}
+              className="brut bg-[var(--paper)] p-4 sm:p-5 grid gap-3"
+              role="status"
+              aria-live="polite"
+            >
+              <div className="flex items-center gap-2 font-mono text-[13.5px] font-bold">
+                <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                Settling on QDay Aevum
+              </div>
+              <ol className="grid gap-2">
+                {[
+                  "Reserve the fee in escrow",
+                  "Record the editor's fix",
+                  "Pay the editor once",
+                ].map((label, i) => {
+                  const done = i < settling.step;
+                  const active = i === settling.step;
+                  return (
+                    <li
+                      key={label}
+                      className={`flex items-center gap-2.5 text-[13.5px] ${
+                        active ? "font-bold text-[var(--ink)]" : "text-[var(--mute)]"
+                      }`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`w-3 h-3 shrink-0 rounded-full border-2 border-[var(--outline)] ${
+                          done || active ? "bg-[var(--mint)]" : "bg-[var(--paper)]"
+                        }`}
+                      />
+                      <span className={done ? "line-through" : ""}>{label}</span>
+                    </li>
+                  );
+                })}
+              </ol>
+              <p className="text-[12px] text-[var(--mute)]">
+                Real transactions on chain 44005. Usually about 20 seconds.
+              </p>
+            </motion.div>
+          )}
           {error && (
             <Banner key="err" tone="error" onClose={() => setError(null)}>
               {error}
@@ -303,12 +408,25 @@ export default function ApprovePage() {
               onClose={() => setBanner(null)}
               action={
                 banner.paid && (
-                  <Link
-                    href="/studio"
-                    className="inline-flex items-center gap-1 min-h-[32px] underline underline-offset-4 decoration-2"
-                  >
-                    Replay fixed captions <ArrowUpRight className="w-4 h-4" />
-                  </Link>
+                  <span className="inline-flex flex-wrap items-center gap-x-4 gap-y-1">
+                    {banner.txUrl && (
+                      <a
+                        href={banner.txUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 min-h-[32px] font-bold underline underline-offset-4 decoration-2"
+                      >
+                        See it on Aevum explorer{" "}
+                        <ArrowUpRight className="w-4 h-4" />
+                      </a>
+                    )}
+                    <Link
+                      href="/studio"
+                      className="inline-flex items-center gap-1 min-h-[32px] underline underline-offset-4 decoration-2"
+                    >
+                      Replay fixed captions <ArrowUpRight className="w-4 h-4" />
+                    </Link>
+                  </span>
                 )
               }
             >
