@@ -14,7 +14,7 @@ import { ProofStrip } from "@/components/landing/ProofStrip";
 export const metadata: Metadata = {
   title: { absolute: "Sikio · Captions that hear Africa" },
   description:
-    "AI captions for African voices. When the AI is unsure of a word, a native speaker hears just those seconds and is paid once on QDay Aevum.",
+    "A pay-per-task stablecoin settlement app on QDay Aevum. A native speaker is paid once in tUSD8 for the exact seconds they fix in African-voice captions.",
 };
 
 const WRAP = "mx-auto w-full max-w-[1280px] px-4 sm:px-7";
@@ -51,17 +51,17 @@ export default function LandingPage() {
             <div className="sikio-rise" style={{ ["--i" as string]: 0 }}>
               <Eyebrow tone="var(--mint)">
                 <span className="h-2 w-2 rounded-full bg-[#111] sikio-led" aria-hidden="true" />
-                Paid on QDay Aevum
+                Paid once in tUSD8 on QDay Aevum
               </Eyebrow>
             </div>
             <h1 className="type-hero mt-6 sikio-rise" style={{ ["--i" as string]: 1 }}>
               Captions that <HearMark>hear</HearMark> Africa.
             </h1>
             <p
-              className="mt-6 max-w-[36ch] text-[clamp(1.05rem,1.6vw,1.25rem)] leading-relaxed text-[var(--ink-2)] sikio-rise"
+              className="mt-6 max-w-[42ch] text-[clamp(1.05rem,1.6vw,1.25rem)] leading-relaxed text-[var(--ink-2)] sikio-rise"
               style={{ ["--i" as string]: 2 }}
             >
-              When the AI isn&apos;t sure of a word, a native speaker hears just those seconds and gets paid once.
+              A pay-per-task settlement app on QDay Aevum. When the AI isn&apos;t sure of a word, a native speaker is paid once, in tUSD8, for the exact seconds they fix.
             </p>
             <div className="mt-8 flex flex-wrap gap-3 sikio-rise" style={{ ["--i" as string]: 3 }}>
               <ButtonLink href="/studio" variant="primary" size="lg">
