@@ -1,0 +1,47 @@
+# Render Blueprint for Sikio.
+#
+# Sikio stores its session state in files on disk, so it must run as ONE always-on
+# instance, not serverless. This deploys the repo's Dockerfile as a single persistent
+# Docker web service with HTTPS.
+#
+# How to use:
+#   1. Push this repo to GitHub.
+#   2. Render dashboard -> New -> Blueprint -> pick this repo. It reads this file.
+#   3. In the service's Environment tab, set the three secret values (they are NOT in
+#      the repo): SIKIO_OPERATOR_PRIVATE_KEY, SIKIO_EDITOR_PRIVATE_KEY, and optionally
+#      OPENAI_API_KEY. Also set NEXT_PUBLIC_SITE_URL to the service's own URL once known.
+#   4. Fund the operator wallet (see deploy-wallet.txt) with a little tUSD8 + tQDAY.
+#
+# Note: the free plan sleeps after ~15 min idle (first request then takes ~50s to wake),
+# and its disk resets on restart/redeploy (session state starts fresh, which is fine for
+# a demo). Ping the URL a minute before judging, or use a paid instance for the window.
+services:
+  - type: web
+    name: sikio
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    healthCheckPath: /api/state
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_AEVUM_RPC_URL
+        value: https://rpc-test.qday.info
+      - key: NEXT_PUBLIC_AEVUM_EXPLORER_URL
+        value: https://explorer-test.qday.info
+      - key: NEXT_PUBLIC_TUSD8_ADDRESS
+        value: "0x456569838f1d43009A91ebA4263147Afd7233483"
+      - key: NEXT_PUBLIC_REVIEW_ESCROW_ADDRESS
+        value: "0x36Cf1caB839bf01306E647C56B2e44e7d4a35E6b"
+      # Set these in the dashboard (sync: false keeps them out of the repo):
+      - key: NEXT_PUBLIC_SITE_URL
+        sync: false
+      - key: SIKIO_OPERATOR_PRIVATE_KEY
+        sync: false
+      - key: SIKIO_EDITOR_PRIVATE_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
