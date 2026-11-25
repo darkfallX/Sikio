@@ -23,6 +23,13 @@ export interface CaptionWord {
   referenceText?: string; // optional ground truth for A/B benchmark evaluation
   confidence: number; // 0..1
   flagged: boolean;
+  // Honest attribution of where `confidence` came from, so nothing is dressed up as
+  // model probability when it is not:
+  //  - "whisper-logprob": real OpenAI Whisper segment average log-probability
+  //  - "prepared-demo": authored fixture confidence for a bundled showcase clip
+  //  - "lexical-heuristic": transparent out-of-vocabulary / proper-noun rule (no neural model)
+  confidenceSource?: "whisper-logprob" | "prepared-demo" | "lexical-heuristic";
+  flagReason?: string; // why a lexical-heuristic word was flagged, e.g. "proper noun", "out-of-vocabulary"
   taskId?: string;
   fixedByHuman?: boolean;
 }
@@ -142,7 +149,9 @@ export interface BenchmarkRun {
   fullReviewCostUsd: number;
   targetedCostUsd: number;
   recordedAt: string;
-  source: "measured-pilot" | "user-logged";
+  // Only real runs the user logged after timing an editor. Sikio never seeds
+  // fabricated "measured" rows, so this is the single honest source.
+  source: "user-logged";
 }
 
 export interface SikioState {
