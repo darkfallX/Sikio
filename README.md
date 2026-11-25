@@ -1,9 +1,9 @@
 # Sikio
 
-> **AI captions for African voices. When the AI isn't sure, it hires a native speaker for those few seconds and pays them on QDay Aevum.**
+> **A pay-per-task stablecoin settlement app on QDay Aevum. When an AI caption is unsure of a word, it pays a native speaker once in tUSD8 for the exact seconds they fix.**
 > (*Sikio* is Swahili for "ear".)
 
-Built for **Aevum Builder Challenge #1** (QDay / PQA Labs · DoraHacks) — **Native AI Assistants** track, on **QDay Aevum Testnet (Chain ID `44005`)** using **`tUSD8` (`0x456569838f1d43009A91ebA4263147Afd7233483`, 6 decimals)**.
+Built for **Aevum Builder Challenge #1** (QDay / PQA Labs · DoraHacks) — **Decentralized Payments** track, on **QDay Aevum Testnet (Chain ID `44005`)** using **`tUSD8` (`0x456569838f1d43009A91ebA4263147Afd7233483`, 6 decimals)**.
 
 ---
 
@@ -190,5 +190,5 @@ Sikio's own code is MIT licensed (see [LICENSE](LICENSE)). It builds on these op
 
 - [Architecture & Workflows](docs/ARCHITECTURE.md)
 - [Threat Model & Security Invariants](docs/THREAT-MODEL.md)
-- [Decisive A/B Test Benchmark](docs/BENCHMARK.md)
+- [Review savings: what is measured, and what is not](docs/BENCHMARK.md)
 - [MIT License](LICENSE)
