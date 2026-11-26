@@ -18,7 +18,7 @@ Built for **Aevum Builder Challenge #1** (QDay / PQA Labs · DoraHacks) — **De
 ## End-to-End Flow
 
 1. **Approve Budget (`Studio`):** Agency approves a bounded `tUSD8` batch budget (cap, per-task ceiling, expiry, allowlisted editors, named approver, emergency revoke kill-switch).
-2. **Buy AI Transcription over HTTP 402 (`x402`):** Sikio Agent calls `/api/transcribe` (self-hosted and labelled as ours) → receives `HTTP 402 Payment Required` (`eip155:44005`, `tUSD8`, `0.04 tUSD8`) → pays inside its approved budget → retries with `X-PAYMENT` proof → receives `200 OK` timed word-level probabilities.
+2. **Buy AI Transcription over HTTP 402 (`x402`):** Sikio Agent calls `/api/transcribe` (self-hosted and labelled as ours) → receives `HTTP 402 Payment Required` (`eip155:44005`, `tUSD8`, `0.04 tUSD8`) → the agent signs a standard x402 `exact` payment, a tUSD8 EIP-3009 `transferWithAuthorization` for exactly the price, valid 5 minutes, with a nonce bound to the request (no transaction, no gas) → retries with it in `X-PAYMENT` → Sikio's facilitator checks the signature, payee, price, time window and nonce, then settles it on chain → receives `200 OK` timed word-level probabilities.
 3. **Reserve Micro-Review Fees (`ReviewEscrow.offerTask`):** Uncertain spans below the confidence floor are clustered into 3–6s excerpts, and exact `tUSD8` fees are locked in escrow.
 4. **Native-Speaker Fix (`Ear` — Mobile Web, Zero Gas):** The assigned editor hears **only the server-sliced WAV excerpt** (`/api/excerpt/[clipId]`, hard-clamped `<= 12s` for client confidentiality), edits the misheard word or confirms the AI guess, and submits with zero crypto jargon and zero `tQDAY` gas required (via EIP-712 `submitCorrectionBySig`).
 5. **Approve & Pay Once (`Approve`):** The agency's named approver listens to the excerpt, checks the before/after diff, and clicks **Approve and pay** (`ReviewEscrow.acceptTask`). The editor receives `tUSD8` **exactly once**; rejected or expired tasks return fees to the batch budget.
@@ -130,15 +130,18 @@ Reproducible via `cd contracts && REVIEW_ESCROW_ADDRESS=0x36Cf1caB839bf01306E647
 | 7 | `acceptTask` (pay editor `0.25 tUSD8` once; verified balance `0.25`) | [`0x71820bca…f38b6eb`](https://explorer-test.qday.info/tx/0x71820bca063398666435fae1c7633f8ed779cff4df487b01c3a988cedf38b6eb) |
 | 8 | `withdrawAvailable` (reclaim unused `1.71 tUSD8` to agency) | [`0x82222855…360d537`](https://explorer-test.qday.info/tx/0x82222855be1128914065c31d5c6f572afcf2886a74b36c8b3da883a1b360d537) |
 
+From the app with no wallet, 26 Nov 2026: the x402 transcript payment as a signed EIP-3009 transfer, agent `0x0C9f…B901` (0 tQDAY) to Sikio, settled by the facilitator with `transferWithAuthorization`: [`0x31ea35ef…cac3e95`](https://explorer-test.qday.info/tx/0x31ea35ef386838cda1e917230fdd6d83beaa6dcc9b68388d4e8192f0cbac3e95).
+
 ---
 
 ## Judge Demo Script (3 to 5 minutes)
 
-No wallet needed. When the server has its operator and editor keys set (see `app/.env.example`), every payment in this script is a real transaction on chain 44005 with an explorer link: the agent pays 0.04 tUSD8 for the transcript (`payInference`), and Approve sends `offerTask`, `submitCorrectionBySig` and `acceptTask`, which pays the editor once (about 30 seconds; the public testnet is sometimes slower). Without those keys the same steps run in a sandbox and every receipt says so. To sign with your own wallet instead, connect it on chain 44005 and switch the top bar from **Sandbox** to **Live tx**.
+No wallet needed. When the server has its operator and editor keys set (see `app/.env.example`), every payment in this script is a real transaction on chain 44005 with an explorer link: the agent signs a 0.04 tUSD8 EIP-3009 transfer for the transcript and Sikio's facilitator settles it (`transferWithAuthorization`, the agent holds no gas), and Approve sends `offerTask`, `submitCorrectionBySig` and `acceptTask`, which pays the editor once (about 30 seconds; the public testnet is sometimes slower). Without those keys the same steps run in a sandbox and every receipt says so. To sign with your own wallet instead, connect it on chain 44005 and switch the top bar from **Sandbox** to **Live tx**.
 
 1. **Landing (`/`):** Click **Open the demo**.
 2. **Studio (`/studio`):** Keep the **Lagos · Pidgin** clip and click **Run agent**.
-   - The x402 receipt shows **402 then 200**: the agent paid `0.04 tUSD8` for the transcript.
+   - The x402 receipt shows **402 then 200** and *"Agent 0x0C9f… signed it, no gas. tUSD8 EIP-3009, settled once."* The explorer link shows `transferWithAuthorization` with tUSD8's `AuthorizationUsed` event. Sending the same payment again returns the same transaction; nothing is paid twice.
+   - Why our own facilitator: QDay lists an x402 facilitator as live but publishes no endpoint (checked 26 Nov 2026), so Sikio runs the same verify and settle steps (`app/src/lib/eip3009.ts`).
    - With `DEEPGRAM_API_KEY` set, the transcript is real Deepgram nova-3 output and the flags are its own word confidences. On the Lagos clip four spans land in **Needs an ear** (*"Point Lagos."*, *"Tunde"*, *"PACE TAC"* for Paystack, *"third mainland"*), and `0.40 tUSD8` is held for native speakers. Without the key, the prepared transcript runs instead and is labelled so.
    - **Cost per minute** compares Sikio with a full human pass.
 3. **Ear (`/ear`):** The phone-first editor view. Step to *"PACE TAC"* (or *"Pay stark"* in the prepared transcript) with the arrows and play the voice note.
