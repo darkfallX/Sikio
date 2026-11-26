@@ -7,9 +7,9 @@
 # How to use:
 #   1. Push this repo to GitHub.
 #   2. Render dashboard -> New -> Blueprint -> pick this repo. It reads this file.
-#   3. In the service's Environment tab, set the three secret values (they are NOT in
-#      the repo): SIKIO_OPERATOR_PRIVATE_KEY, SIKIO_EDITOR_PRIVATE_KEY, and optionally
-#      OPENAI_API_KEY. Also set NEXT_PUBLIC_SITE_URL to the service's own URL once known.
+#   3. In the service's Environment tab, set the secret values (they are NOT in
+#      the repo): SIKIO_OPERATOR_PRIVATE_KEY, SIKIO_EDITOR_PRIVATE_KEY, DEEPGRAM_API_KEY,
+#      and optionally OPENAI_API_KEY. Also set NEXT_PUBLIC_SITE_URL to the service's own URL once known.
 #   4. Fund the operator wallet (see deploy-wallet.txt) with a little tUSD8 + tQDAY.
 #
 # Note: the free plan sleeps after ~15 min idle (first request then takes ~50s to wake),
@@ -44,4 +44,7 @@ services:
       - key: SIKIO_EDITOR_PRIVATE_KEY
         sync: false
       - key: OPENAI_API_KEY
+        sync: false
+      # Real speech recognition (Deepgram nova-3); without it the prepared transcript runs.
+      - key: DEEPGRAM_API_KEY
         sync: false
