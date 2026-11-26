@@ -37,6 +37,28 @@ export function buildFlaggedClusters(
     }
   }
 
+  // Real speech recognition often splits one unfamiliar word in two ("Paystack" heard
+  // as "PACE TAC") and is only unsure of one half. Pull in a directly adjacent word
+  // the model is also not near-certain of, so the editor's fix replaces the whole
+  // misheard word instead of leaving "Paystack TAC". Only for real model
+  // confidences; prepared-demo confidences are authored and stay as they are.
+  const NEAR_CERTAIN = 0.95;
+  const unsureNeighbour = (w: CaptionWord | undefined) =>
+    !!w && w.confidenceSource === "deepgram-confidence" && w.confidence < NEAR_CERTAIN;
+  const taken = new Set(groups.flat());
+  for (const group of groups) {
+    const before = words[group[0] - 1];
+    if (unsureNeighbour(before) && !taken.has(before.index)) {
+      group.unshift(before.index);
+      taken.add(before.index);
+    }
+    const after = words[group[group.length - 1] + 1];
+    if (unsureNeighbour(after) && !taken.has(after.index)) {
+      group.push(after.index);
+      taken.add(after.index);
+    }
+  }
+
   return groups.map((group) => {
     const firstIdx = group[0];
     const lastIdx = group[group.length - 1];
