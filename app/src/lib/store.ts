@@ -265,6 +265,8 @@ export function createJobAndReserveTasks(params: {
   transcriptionEngine: string;
   x402RequestId: string;
   x402TxHash?: `0x${string}`;
+  /** Set when the agent paid with a signed EIP-3009 transfer settled on chain. */
+  x402Signed?: { payer?: `0x${string}`; provider: `0x${string}` };
   words: CaptionJob["words"];
   preferredCity?: string;
   isCustomUpload?: boolean;
@@ -317,14 +319,17 @@ export function createJobAndReserveTasks(params: {
     batchId: b.batchId,
     jobId,
     amountTusd8: params.inferenceCostTusd8,
-    from: b.agentAddress,
-    to: SIKIO_TRANSCRIPTION_PROVIDER,
+    from: (x402Mode === "aevum-live" && params.x402Signed?.payer) || b.agentAddress,
+    to: (x402Mode === "aevum-live" && params.x402Signed?.provider) || SIKIO_TRANSCRIPTION_PROVIDER,
     actorLabel: "Sikio Agent → Sikio x402 ASR",
     txHash: x402TxHash,
     mode: x402Mode,
     settlementState: "settled",
     gasToken: x402Mode === "aevum-live" ? "tQDAY" : "sandbox",
-    note: `HTTP 402 → Paid ${params.inferenceCostTusd8.toFixed(2)} tUSD8 → 200 OK (${params.words.length} timed words)`,
+    note:
+      x402Mode === "aevum-live" && params.x402Signed
+        ? `HTTP 402 → agent signed ${params.inferenceCostTusd8.toFixed(2)} tUSD8 (EIP-3009, no gas) → facilitator settled → 200 OK (${params.words.length} timed words)`
+        : `HTTP 402 → Paid ${params.inferenceCostTusd8.toFixed(2)} tUSD8 → 200 OK (${params.words.length} timed words)`,
     timestamp: new Date().toISOString(),
     x402Proof: {
       protocol: "x402",
