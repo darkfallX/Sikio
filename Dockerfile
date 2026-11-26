@@ -14,6 +14,9 @@ RUN pnpm build
 
 FROM node:22-alpine AS runner
 WORKDIR /app
+# ffmpeg converts uploaded phone audio (.m4a, .ogg, .mp3) to WAV so editors only
+# ever receive the uncertain seconds (app/src/lib/audio.ts).
+RUN apk add --no-cache ffmpeg
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
