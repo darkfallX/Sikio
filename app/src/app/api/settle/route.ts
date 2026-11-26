@@ -5,6 +5,7 @@ import {
   isLiveSettlementConfigured,
   liveSettlementAddresses,
   settleTaskOnChain,
+  SlowTestnetError,
 } from "@/lib/settlement";
 import { shortHash } from "@/lib/aevum";
 
@@ -116,9 +117,15 @@ export async function POST(req: NextRequest) {
       settlement,
     });
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "On-chain settlement failed";
-    // Nothing is marked paid when settlement throws: the task stays "submitted".
+    // Nothing is marked paid when settlement throws: the task stays "submitted",
+    // and pressing Approve again resumes from the step the chain already shows.
+    if (err instanceof SlowTestnetError) {
+      return NextResponse.json({ error: err.message, retryable: true }, { status: 503 });
+    }
+    const raw = err instanceof Error ? err.message : "On-chain settlement failed";
+    // Keep the first line only: viem appends request dumps a judge should not see.
+    const message = raw.split("\n")[0].slice(0, 240);
+    console.error("[settle] failed:", raw);
     return NextResponse.json({ error: message }, { status: 502 });
   }
 }
