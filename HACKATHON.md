@@ -11,7 +11,8 @@ QDay Aevum testnet (chain 44005) and tUSD8. Named features in the criteria and d
 - Stablecoin paymaster (gas in tUSD8), x402 facilitator, bundler
 - tUSD8 with EIP-2612 permit and EIP-3009 signed transfers
 
-What Sikio uses today: chain 44005, tUSD8, its own escrow with caps, expiry, allowlist, approver and revoke, EIP-712 signed answers relayed by the server (no gas for editors), a 402 paywall on its own transcription endpoint. Not used: 4337 accounts, session keys, the QDay paymaster, the QDay x402 facilitator, ERC-8004.
+What Sikio uses today: chain 44005, tUSD8, its own escrow with caps, expiry, allowlist, approver and revoke, EIP-712 signed answers relayed by the server (no gas for editors), and since 26 Nov standard x402 "exact" payments with tUSD8's EIP-3009: the agent signs a transfer for exactly the price (5 min, nonce bound to the request, no gas, 0.40 float), Sikio's facilitator verifies and settles it (`transferWithAuthorization`, tx 0x31ea35ef…cac3e95). Replay returns the same tx; underpaying gets 402.
+Not used: 4337 accounts, session keys, the QDay paymaster, ERC-8004. QDay's x402 facilitator is said to be live but no endpoint is published (searched 26 Nov), so Sikio runs its own verify and settle; 4337 needs the bundler that the starter kit calls unsupported (KernelFactory unstaked per an open issue).
 
 ## Scoring (qday.io weights, DoraHacks wording)
 Innovation 20 · UX and presentation 15 · Technical quality and platform integration 15 · Real-world utility 15 · Safety, trust and controls 15 · Demo 10 · Documentation 10.
@@ -42,6 +43,15 @@ Honest reading: the staged errors overstated how bad ASR is on these clips. Conf
 ## Judge path
 Target: one public link, under 2 minutes, no wallet: Studio, Run agent, Ear, send answer, Approve, explorer link. Public link not yet made (user, last).
 26 Nov 2026, local production build, no wallet: Approve sent real offerTask, submitCorrectionBySig and acceptTask; 0.10 tUSD8 reached the editor (tx 0x235db966…a5e0), 31 s click to explorer link. Before the fix it failed or took 60 to 155 s: the public RPC answers in 2.5 to 19 s and viem gave up at 10 s.
+
+## Public demo budget (26 Nov 2026)
+Operator wallet 3.23 tUSD8 + batch 2 leftovers, 0.99 tQDAY. One full judge run (transcript 0.04 + four approvals 0.40) costs 0.44 tUSD8.
+Render free plan wipes the disk on every sleep and wake. Before the fix, each wake locked a fresh 2 tUSD8 batch, so the second wake would have left every later judge on sandbox. Now the server finds its own batch on chain, takes back leftovers before opening a new one, and funds a new batch with what it holds (min 0.50).
+Limits: 1.00 tUSD8 per visitor per hour, 1.50 tUSD8 per day for the whole server (LIVE_VISITOR_HOURLY_TUSD8, LIVE_DAILY_CAP_TUSD8); over a limit the payment is labelled sandbox.
+Needed for judging (12 to 14 Dec): top up the operator so each judging day has its 1.50.
+
+## Field (26 Nov 2026)
+About 138 public entries (117 counted 25 Nov plus 21 new repos on GitHub since). Base rate 3 paid places / 138 ≈ 2.2%. None of the new ones is in speech or captions; most are invoices, Confirmation of Payee and agent spending mandates, many using session keys, EIP-3009 or gasless flows that Sikio does not.
 
 ## Deadline
 11 Dec 2026, 08:00 UTC. User plans to submit earlier.
