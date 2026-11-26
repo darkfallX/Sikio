@@ -1,17 +1,22 @@
 import fs from "fs";
+import path from "path";
 import { NextRequest, NextResponse } from "next/server";
-import { createPublicClient, http } from "viem";
-import { aevumTestnet, AEVUM_CONFIG } from "@/lib/aevum";
+import { deepgramConfigured, deepgramEngineLabel, transcribeWithDeepgram } from "@/lib/deepgram";
+import { liveInferenceProvider, verifyInferencePayment } from "@/lib/settlement";
 import {
   buildShowcaseTranscript,
   buildCustomTranscript,
   getClipSpec,
+  loadClipTimings,
 } from "@/lib/clips";
 import { findUploadedClip } from "@/lib/storage";
 import { CaptionWord } from "@/lib/types";
 import { buildX402Challenge, decodeX402Header } from "@/lib/x402";
 
 export const runtime = "nodejs";
+
+/** Deepgram results by verified payment tx, so replaying a payment costs no credit. */
+const deepgramByTx = new Map<string, { clipId: string; durationSeconds: number; words: CaptionWord[] }>();
 
 async function transcribeWithOpenAIWhisper(params: {
   clipId: string;
@@ -121,6 +126,7 @@ export async function POST(req: NextRequest) {
         requestId,
         amountTusd8: inferenceCostTusd8,
         resource: "/api/transcribe",
+        payTo: liveInferenceProvider() ?? undefined,
       });
       return NextResponse.json(
         {
@@ -154,16 +160,20 @@ export async function POST(req: NextRequest) {
     let verifiedOnChain = false;
     if (payment.mode === "aevum-live") {
       try {
-        const client = createPublicClient({
-          chain: aevumTestnet,
-          transport: http(AEVUM_CONFIG.rpcUrl),
-        });
-        const receipt = await client.getTransactionReceipt({
-          hash: payment.txHash,
-        });
-        if (!receipt || receipt.status !== "success") {
+        // The tx must be a ReviewEscrow InferencePaid for THIS requestId and at
+        // least the asked amount; any other successful tx is refused.
+        const paid = await verifyInferencePayment(
+          payment.txHash,
+          payment.requestId,
+          // The server's own price, never the amount the client claims.
+          BigInt(Math.round(inferenceCostTusd8 * 1_000_000))
+        );
+        if (!paid) {
           return NextResponse.json(
-            { error: "Aevum Testnet payment transaction not confirmed or reverted." },
+            {
+              error:
+                "That transaction did not pay this request: no ReviewEscrow InferencePaid for this requestId and amount.",
+            },
             { status: 402 }
           );
         }
@@ -181,18 +191,13 @@ export async function POST(req: NextRequest) {
         ? Math.min(0.95, Math.max(0.4, body.confidenceThreshold))
         : 0.78;
 
-    // Step 3: Showcase WAV clip. Words and confidences come from a prepared fixture
-    // (clips/timings.json plus asrErrors in lib/clips.ts), not live model inference.
-    if (body.clipId && getClipSpec(body.clipId)) {
-      const { durationSeconds, words } = buildShowcaseTranscript(
-        body.clipId,
-        threshold
-      );
-      return NextResponse.json(
+    const paidResponse = (engine: string, durationSeconds: number, words: CaptionWord[], note?: string) =>
+      NextResponse.json(
         {
           ok: true,
           operator: "Sikio Transcription Service (self-hosted)",
-          engine: "Sikio Local ASR Engine (prepared demo transcript)",
+          engine,
+          engineNote: note,
           x402: {
             requestId: payment.requestId,
             txHash: payment.txHash,
@@ -210,6 +215,64 @@ export async function POST(req: NextRequest) {
             "X-Sikio-Operator": "Sikio Transcription Service (self-hosted)",
           },
         }
+      );
+
+    // Step 3a: real speech recognition (Deepgram) for bundled clips and uploads,
+    // when DEEPGRAM_API_KEY is set. Flags come from Deepgram's own word confidences.
+    // It spends real Deepgram credit, so it runs only for a payment verified on chain;
+    // sandbox payments (unverified by design) get the labelled prepared transcript.
+    // A replayed tx is answered from memory instead of calling Deepgram again.
+    let deepgramFailure: string | undefined;
+    const replay = verifiedOnChain ? deepgramByTx.get(payment.txHash.toLowerCase()) : undefined;
+    if (replay && replay.clipId === body.clipId) {
+      const words = replay.words.map((w) => ({ ...w, flagged: w.confidence < threshold }));
+      return paidResponse(deepgramEngineLabel(), replay.durationSeconds, words);
+    }
+    if (
+      verifiedOnChain &&
+      deepgramConfigured() &&
+      body.clipId &&
+      !body.customTranscript?.trim()
+    ) {
+      const spec = getClipSpec(body.clipId);
+      const uploaded = spec ? null : findUploadedClip(body.clipId);
+      const filePath = spec
+        ? path.join(process.cwd(), "public", spec.audioUrl.replace(/^\//, ""))
+        : uploaded?.filePath;
+      if (filePath && fs.existsSync(filePath)) {
+        try {
+          const timing = spec ? loadClipTimings()[spec.id] : undefined;
+          const { durationSeconds, words } = await transcribeWithDeepgram({
+            filePath,
+            mimeType: spec ? "audio/wav" : uploaded?.meta.mimeType || "audio/wav",
+            threshold,
+            referenceWords: timing?.words.map((w) => w.text),
+          });
+          if (deepgramByTx.size > 500) deepgramByTx.clear();
+          deepgramByTx.set(payment.txHash.toLowerCase(), { clipId: body.clipId, durationSeconds, words });
+          return paidResponse(deepgramEngineLabel(), durationSeconds, words);
+        } catch (err) {
+          deepgramFailure = err instanceof Error ? err.message : "Speech recognition failed.";
+          console.error("[transcribe] Deepgram failed:", deepgramFailure);
+        }
+      }
+    }
+
+    // Step 3b: Showcase WAV clip without real speech recognition. Words and
+    // confidences come from a prepared fixture (clips/timings.json plus asrErrors in
+    // lib/clips.ts), not live model inference, and the engine label says so.
+    if (body.clipId && getClipSpec(body.clipId)) {
+      const { durationSeconds, words } = buildShowcaseTranscript(
+        body.clipId,
+        threshold
+      );
+      return paidResponse(
+        "Sikio Local ASR Engine (prepared demo transcript)",
+        durationSeconds,
+        words,
+        deepgramFailure
+          ? "Real speech recognition was unavailable for this run, so the prepared transcript was used."
+          : undefined
       );
     }
 
