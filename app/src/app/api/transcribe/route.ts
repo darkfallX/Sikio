@@ -4,6 +4,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { deepgramConfigured, deepgramEngineLabel, transcribeWithDeepgram } from "@/lib/deepgram";
 import { liveInferenceProvider, verifyInferencePayment } from "@/lib/settlement";
 import {
+  X402AlreadySettled,
+  X402PaymentRejected,
+  settleExactPayment,
+  verifyExactPayment,
+} from "@/lib/eip3009";
+import {
   buildShowcaseTranscript,
   buildCustomTranscript,
   getClipSpec,
@@ -156,9 +162,45 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // If live Aevum tx claimed, verify on-chain receipt against rpc-test.qday.info
     let verifiedOnChain = false;
-    if (payment.mode === "aevum-live") {
+    let paidTxHash: `0x${string}` | undefined = payment.txHash;
+    let paymentScheme: "eip3009" | "escrow" | "sandbox" = "sandbox";
+
+    if (payment.payload) {
+      // Standard x402 "exact": a signed EIP-3009 tUSD8 transfer. Sikio's facilitator
+      // verifies it against the server's own price and payee, then settles it on chain.
+      const payTo = liveInferenceProvider();
+      if (!payTo) {
+        return NextResponse.json(
+          { error: "This server cannot settle signed payments (no live keys)." },
+          { status: 402 }
+        );
+      }
+      try {
+        await verifyExactPayment(payment.payload, {
+          requestId: payment.requestId,
+          payTo,
+          minAmountBaseUnits: BigInt(Math.round(inferenceCostTusd8 * 1_000_000)),
+        });
+        paidTxHash = await settleExactPayment(payment.payload);
+      } catch (err) {
+        if (err instanceof X402AlreadySettled && err.txHash) {
+          // A replay of a payment already settled: serve the cached result, never pay twice.
+          paidTxHash = err.txHash;
+        } else {
+          const msg =
+            err instanceof X402PaymentRejected || err instanceof X402AlreadySettled
+              ? err.message
+              : "Could not settle the signed tUSD8 payment on QDay Aevum.";
+          if (!(err instanceof X402PaymentRejected)) {
+            console.error("[transcribe] x402 settle failed:", err instanceof Error ? err.message.split("\n")[0] : err);
+          }
+          return NextResponse.json({ error: msg }, { status: 402 });
+        }
+      }
+      verifiedOnChain = true;
+      paymentScheme = "eip3009";
+    } else if (payment.mode === "aevum-live" && payment.txHash) {
       try {
         // The tx must be a ReviewEscrow InferencePaid for THIS requestId and at
         // least the asked amount; any other successful tx is refused.
@@ -178,6 +220,7 @@ export async function POST(req: NextRequest) {
           );
         }
         verifiedOnChain = true;
+        paymentScheme = "escrow";
       } catch {
         return NextResponse.json(
           { error: "Could not verify tUSD8 transaction on QDay Aevum RPC." },
@@ -185,6 +228,18 @@ export async function POST(req: NextRequest) {
         );
       }
     }
+    if (!paidTxHash) {
+      return NextResponse.json({ error: "Invalid X-PAYMENT header format." }, { status: 400 });
+    }
+    const x402Info = {
+      requestId: payment.requestId,
+      txHash: paidTxHash,
+      mode: payment.mode,
+      scheme: paymentScheme,
+      payer: payment.payload?.authorization.from,
+      verifiedOnChain,
+      amountTusd8: inferenceCostTusd8,
+    };
 
     const threshold =
       typeof body.confidenceThreshold === "number"
@@ -198,20 +253,14 @@ export async function POST(req: NextRequest) {
           operator: "Sikio Transcription Service (self-hosted)",
           engine,
           engineNote: note,
-          x402: {
-            requestId: payment.requestId,
-            txHash: payment.txHash,
-            mode: payment.mode,
-            verifiedOnChain,
-            amountTusd8: inferenceCostTusd8,
-          },
+          x402: x402Info,
           durationSeconds,
           words,
         },
         {
           status: 200,
           headers: {
-            "X-PAYMENT-RESPONSE": payment.txHash,
+            "X-PAYMENT-RESPONSE": paidTxHash,
             "X-Sikio-Operator": "Sikio Transcription Service (self-hosted)",
           },
         }
@@ -223,7 +272,7 @@ export async function POST(req: NextRequest) {
     // sandbox payments (unverified by design) get the labelled prepared transcript.
     // A replayed tx is answered from memory instead of calling Deepgram again.
     let deepgramFailure: string | undefined;
-    const replay = verifiedOnChain ? deepgramByTx.get(payment.txHash.toLowerCase()) : undefined;
+    const replay = verifiedOnChain ? deepgramByTx.get(paidTxHash.toLowerCase()) : undefined;
     if (replay && replay.clipId === body.clipId) {
       const words = replay.words.map((w) => ({ ...w, flagged: w.confidence < threshold }));
       return paidResponse(deepgramEngineLabel(), replay.durationSeconds, words);
@@ -249,7 +298,7 @@ export async function POST(req: NextRequest) {
             referenceWords: timing?.words.map((w) => w.text),
           });
           if (deepgramByTx.size > 500) deepgramByTx.clear();
-          deepgramByTx.set(payment.txHash.toLowerCase(), { clipId: body.clipId, durationSeconds, words });
+          deepgramByTx.set(paidTxHash.toLowerCase(), { clipId: body.clipId, durationSeconds, words });
           return paidResponse(deepgramEngineLabel(), durationSeconds, words);
         } catch (err) {
           deepgramFailure = err instanceof Error ? err.message : "Speech recognition failed.";
@@ -289,20 +338,14 @@ export async function POST(req: NextRequest) {
             operator: "Sikio Transcription Service (self-hosted)",
             engine:
               "OpenAI Whisper API (word timings + segment log-probability confidence)",
-            x402: {
-              requestId: payment.requestId,
-              txHash: payment.txHash,
-              mode: payment.mode,
-              verifiedOnChain,
-              amountTusd8: inferenceCostTusd8,
-            },
+            x402: x402Info,
             durationSeconds: whisper.durationSeconds,
             words: whisper.words,
           },
           {
             status: 200,
             headers: {
-              "X-PAYMENT-RESPONSE": payment.txHash,
+              "X-PAYMENT-RESPONSE": paidTxHash,
               "X-Sikio-Operator": "Sikio Transcription Service (self-hosted)",
             },
           }
@@ -338,20 +381,14 @@ export async function POST(req: NextRequest) {
         operator: "Sikio Transcription Service (self-hosted)",
         engine:
           "Sikio Local ASR Engine (your transcript + lexical uncertainty heuristic)",
-        x402: {
-          requestId: payment.requestId,
-          txHash: payment.txHash,
-          mode: payment.mode,
-          verifiedOnChain,
-          amountTusd8: inferenceCostTusd8,
-        },
+        x402: x402Info,
         durationSeconds,
         words,
       },
       {
         status: 200,
         headers: {
-          "X-PAYMENT-RESPONSE": payment.txHash,
+          "X-PAYMENT-RESPONSE": paidTxHash,
           "X-Sikio-Operator": "Sikio Transcription Service (self-hosted)",
         },
       }
