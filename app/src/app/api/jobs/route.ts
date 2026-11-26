@@ -9,6 +9,11 @@ import { findUploadedClip } from "@/lib/storage";
 import { encodeX402Header, X402PaymentChallenge } from "@/lib/x402";
 import { CaptionWord, ExecutionMode } from "@/lib/types";
 import { POST as transcribePost } from "../transcribe/route";
+import {
+  isLiveSettlementConfigured,
+  payInferenceOnChain,
+  SlowTestnetError,
+} from "@/lib/settlement";
 
 export const runtime = "nodejs";
 
@@ -31,6 +36,8 @@ export async function POST(req: NextRequest) {
       confidenceThreshold?: number;
       feePerTaskTusd8?: number;
       x402TxHash?: `0x${string}`;
+      /** The requestId the browser wallet paid for, so the server verifies that exact payment. */
+      x402RequestId?: string;
       mode?: ExecutionMode;
     };
 
@@ -46,10 +53,14 @@ export async function POST(req: NextRequest) {
         : 0.1;
 
     const inferenceCostTusd8 = 0.04;
-    const requestId = `x402-${Date.now().toString(36)}`;
+    const requestId =
+      body.x402RequestId && /^x402-[a-z0-9]{4,20}$/.test(body.x402RequestId)
+        ? body.x402RequestId
+        : `x402-${Date.now().toString(36)}`;
     const state = readState();
-    const effectiveMode: ExecutionMode =
+    let effectiveMode: ExecutionMode =
       body.x402TxHash && body.mode === "aevum-live" ? "aevum-live" : "sandbox";
+    let livePaymentNote: string | undefined;
 
     const transcribePayload = {
       clipId: body.clipId,
@@ -77,9 +88,29 @@ export async function POST(req: NextRequest) {
     };
     const challenge = step1Json.challenge;
 
-    // Step 2: Construct authentic X-PAYMENT proof
+    // Step 2: Pay for the transcript. With no browser wallet, the agent pays on
+    // chain itself (ReviewEscrow.payInference from its live batch), so a judge
+    // with no wallet still sees a real x402 payment. If the testnet is too slow,
+    // fall back to a sandbox receipt that is labelled sandbox.
+    let serverPaidTx: `0x${string}` | undefined;
+    if (!body.x402TxHash && isLiveSettlementConfigured()) {
+      try {
+        const paid = await payInferenceOnChain(challenge.requestId, inferenceCostTusd8);
+        serverPaidTx = paid.txHash;
+        effectiveMode = "aevum-live";
+      } catch (err) {
+        livePaymentNote =
+          err instanceof SlowTestnetError
+            ? "The QDay testnet was slow, so this transcript was paid in sandbox."
+            : "On-chain payment failed, so this transcript was paid in sandbox.";
+        console.error("[jobs] live payInference failed:", err instanceof Error ? err.message : err);
+      }
+    }
+
+    // Construct the X-PAYMENT proof
     const x402TxHash: `0x${string}` =
       body.x402TxHash ||
+      serverPaidTx ||
       (`0x${Buffer.from(`${requestId}:${Date.now()}`)
         .toString("hex")
         .padEnd(64, "a")
@@ -157,7 +188,7 @@ export async function POST(req: NextRequest) {
       transcriptionEngine:
         step2Json.engine || "Sikio Local ASR Engine (self-hosted x402)",
       x402RequestId: challenge.requestId,
-      x402TxHash: body.x402TxHash,
+      x402TxHash: body.x402TxHash || serverPaidTx,
       words: step2Json.words,
       preferredCity,
       isCustomUpload,
@@ -172,6 +203,7 @@ export async function POST(req: NextRequest) {
         step2PaymentHeaderPreview: `${paymentHeader.slice(0, 36)}…`,
         step3HttpStatus: 200,
       },
+      livePaymentNote,
       job: result.job,
       createdTasks: result.createdTasks,
       state: result.state,
