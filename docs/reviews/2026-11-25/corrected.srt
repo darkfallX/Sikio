@@ -1,0 +1,27 @@
+1
+00:00:00,102 --> 00:00:03,004
+Welcome back to Tech Point Lagos.
+
+2
+00:00:03,024 --> 00:00:05,164
+Today we are talking with Tuesday from Yabba
+
+3
+00:00:05,184 --> 00:00:07,854
+about how founders use Paystack and Flutterwave
+
+4
+00:00:07,874 --> 00:00:10,966
+to settle Nara payouts without wall holler.
+
+5
+00:00:10,986 --> 00:00:13,280
+Even when down for traffic holds you on Third
+
+6
+00:00:13,300 --> 00:00:16,290
+Main land Bridge, instant transfers keep small
+
+7
+00:00:16,310 --> 00:00:17,397
+shops moving.
