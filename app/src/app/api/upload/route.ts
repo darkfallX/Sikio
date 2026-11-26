@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { AudioConversionError, convertToPcmWav, isWavBuffer } from "@/lib/audio";
 import { saveUploadedClip } from "@/lib/storage";
 
 export const runtime = "nodejs";
@@ -62,14 +63,30 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const bytes = Buffer.from(await file.arrayBuffer());
+    const original = Buffer.from(await file.arrayBuffer());
     const suffix = crypto.randomBytes(3).toString("hex");
     const clipId = `custom-${Date.now().toString(36)}-${suffix}`;
 
+    // Store only sliceable PCM WAV: phone formats are converted, never kept as is,
+    // so the excerpt endpoint can always cut the exact uncertain seconds.
+    let bytes: Buffer = original;
+    if (!isWavBuffer(original)) {
+      try {
+        bytes = await convertToPcmWav(original);
+      } catch (err) {
+        const reason = err instanceof AudioConversionError ? err.message : "Could not convert the audio.";
+        return NextResponse.json(
+          { error: `${reason} Upload a WAV file instead.` },
+          { status: 415 }
+        );
+      }
+    }
+
     const record = saveUploadedClip({
       clipId,
-      fileName: file.name,
-      mimeType,
+      // Keep the name the user knows, but record that what is stored is WAV.
+      fileName: bytes === original ? file.name : `${file.name.replace(/\.[^.]+$/, "")}.wav`,
+      mimeType: "audio/wav",
       bytes,
     });
 
