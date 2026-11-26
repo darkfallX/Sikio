@@ -8,6 +8,7 @@ import {
   keccak256,
   toHex,
   getAddress,
+  decodeEventLog,
   type Hex,
   type Address,
 } from "viem";
@@ -80,9 +81,15 @@ export function liveSettlementAddresses(): {
   };
 }
 
+// The public Aevum RPC answers in 2 to 19 seconds (measured 25 Nov 2026), so
+// viem's 10 second default times out often. Give each call more room and retry.
+function rpcTransport() {
+  return http(AEVUM_CONFIG.rpcUrl, { timeout: 45_000, retryCount: 4, retryDelay: 1_000 });
+}
+
 const publicClient = createPublicClient({
   chain: aevumTestnet,
-  transport: http(AEVUM_CONFIG.rpcUrl),
+  transport: rpcTransport(),
 });
 
 interface LiveBatchRecord {
@@ -151,7 +158,7 @@ function operatorWallet(operatorKey: Hex) {
   const wallet = createWalletClient({
     account,
     chain: aevumTestnet,
-    transport: http(AEVUM_CONFIG.rpcUrl),
+    transport: rpcTransport(),
   });
   return { account, wallet };
 }
@@ -319,9 +326,200 @@ async function ensureLiveBatch(
  * returns the real transaction hashes. The acceptTask hash is the single
  * "paid once" settlement a judge verifies on the explorer.
  */
+const TASK_ACCEPTED_EVENT = parseAbi([
+  "event TaskAccepted(uint256 indexed batchId, bytes32 indexed taskId, address indexed editor, uint256 fee, address approver, bytes32 correctionHash)",
+])[0];
+
+/** True for errors caused by a slow or unreachable RPC, which are safe to retry. */
+function isTransientRpcError(err: unknown): boolean {
+  const msg = err instanceof Error ? `${err.name} ${err.message}` : String(err);
+  return /took too long|timed? ?out|TimeoutError|HttpRequestError|fetch failed|ECONNRESET|ETIMEDOUT|socket hang up|503|502|429/i.test(
+    msg
+  );
+}
+
+/**
+ * When the chain already shows a task as paid (for example the acceptTask went
+ * through but the receipt wait timed out), find the real payment in the
+ * contract's TaskAccepted log so the ledger records it instead of failing.
+ * Aevum's RPC rejects log ranges over 1,000 blocks, so search back in chunks.
+ */
+async function findAcceptedTx(
+  escrow: Address,
+  taskIdBytes32: Hex
+): Promise<{ hash: Hex; editor: Address; batchId: number } | null> {
+  const latest = await publicClient.getBlockNumber();
+  const STEP = 1_000n;
+  for (let to = latest, i = 0; i < 20 && to > 0n; i++, to -= STEP) {
+    const from = to >= STEP - 1n ? to - (STEP - 1n) : 0n;
+    const logs = await publicClient.getLogs({
+      address: escrow,
+      event: TASK_ACCEPTED_EVENT,
+      args: { taskId: taskIdBytes32 },
+      fromBlock: from,
+      toBlock: to,
+    });
+    if (logs.length > 0) {
+      const log = logs[logs.length - 1];
+      return {
+        hash: log.transactionHash as Hex,
+        editor: log.args.editor as Address,
+        batchId: Number(log.args.batchId),
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Settles one task on chain, surviving a slow public testnet: transient RPC
+ * errors resume from whatever step the chain already shows (each step is
+ * idempotent on chain), and a task the chain already paid is reported with its
+ * real acceptTask hash rather than paid again.
+ */
 export async function settleTaskOnChain(
   input: SettlementTaskInput
 ): Promise<SettlementResult> {
+  const ATTEMPTS = 3;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+    try {
+      return await settleOnce(input);
+    } catch (err) {
+      lastError = err;
+      if (err instanceof AlreadyAcceptedOnChain) {
+        const { operatorKey, escrow } = requireConfigured();
+        const found = await findAcceptedTx(escrow, input.taskIdBytes32);
+        if (!found) throw err;
+        const editorBalance = (await publicClient.readContract({
+          address: AEVUM_CONFIG.tusd8Address,
+          abi: ERC20_ABI,
+          functionName: "balanceOf",
+          args: [found.editor],
+        })) as bigint;
+        return {
+          mode: "aevum-live",
+          batchId: found.batchId,
+          taskIdBytes32: input.taskIdBytes32,
+          editorAddress: found.editor,
+          operatorAddress: privateKeyToAccount(operatorKey).address,
+          correctionHash: input.correctionHash,
+          offerTxHash: null,
+          submitTxHash: null,
+          acceptTxHash: found.hash,
+          feeTusd8: input.feeTusd8,
+          editorBalanceTusd8: Number(formatUnits(editorBalance, TUSD8_DECIMALS)),
+          explorerTxUrl: `${AEVUM_CONFIG.explorerUrl}/tx/${found.hash}`,
+        };
+      }
+      if (!isTransientRpcError(err) || attempt === ATTEMPTS) break;
+      await new Promise((r) => setTimeout(r, 2_000 * attempt));
+    }
+  }
+  if (isTransientRpcError(lastError)) {
+    throw new SlowTestnetError();
+  }
+  throw lastError;
+}
+
+const INFERENCE_PAID_EVENT = parseAbi([
+  "event InferencePaid(uint256 indexed batchId, bytes32 indexed requestId, address indexed provider, uint256 amount)",
+])[0];
+const PAY_INFERENCE_ABI = parseAbi([
+  "function payInference(uint256 batchId, bytes32 requestId, address provider, uint256 amount)",
+  "function inferencePaid(bytes32) view returns (bool)",
+]);
+
+/** The address that receives x402 fees when the server pays: Sikio's own operator. */
+export function liveInferenceProvider(): Address | null {
+  return liveSettlementAddresses().operator;
+}
+
+/**
+ * The agent buys one transcription on chain: ReviewEscrow.payInference moves the
+ * x402 fee from the live batch to Sikio's own server address, once per requestId.
+ */
+export async function payInferenceOnChain(
+  requestId: string,
+  amountTusd8: number
+): Promise<{ txHash: Hex; requestIdBytes32: Hex; provider: Address }> {
+  const { operatorKey, editorKey, escrow } = requireConfigured();
+  const { account, wallet } = operatorWallet(operatorKey);
+  const editor = privateKeyToAccount(editorKey).address;
+  const amount = parseUnits(amountTusd8.toFixed(TUSD8_DECIMALS), TUSD8_DECIMALS);
+  const requestIdBytes32 = keccak256(toHex(requestId));
+
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const batch = await ensureLiveBatch(escrow, operatorKey, editor, amount);
+      const hash = await wallet.writeContract({
+        address: escrow,
+        abi: PAY_INFERENCE_ABI,
+        functionName: "payInference",
+        args: [BigInt(batch.batchId), requestIdBytes32, account.address, amount],
+      });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") {
+        throw new Error("payInference reverted on Aevum Testnet.");
+      }
+      return { txHash: hash, requestIdBytes32, provider: account.address };
+    } catch (err) {
+      lastError = err;
+      if (!isTransientRpcError(err) || attempt === 3) break;
+      await new Promise((r) => setTimeout(r, 2_000 * attempt));
+    }
+  }
+  if (isTransientRpcError(lastError)) throw new SlowTestnetError();
+  throw lastError;
+}
+
+/**
+ * Checks that a transaction really paid THIS x402 request through ReviewEscrow,
+ * for at least the asked amount. A random successful tx hash does not pass.
+ */
+export async function verifyInferencePayment(
+  txHash: Hex,
+  requestId: string,
+  minAmountBaseUnits: bigint
+): Promise<boolean> {
+  const escrow = AEVUM_CONFIG.reviewEscrowAddress as Address;
+  if (!escrow) return false;
+  const receipt = await publicClient.getTransactionReceipt({ hash: txHash });
+  if (!receipt || receipt.status !== "success") return false;
+  const wanted = keccak256(toHex(requestId)).toLowerCase();
+  for (const log of receipt.logs) {
+    if (log.address.toLowerCase() !== escrow.toLowerCase()) continue;
+    try {
+      const ev = decodeEventLog({ abi: [INFERENCE_PAID_EVENT], data: log.data, topics: log.topics });
+      if (
+        ev.eventName === "InferencePaid" &&
+        String(ev.args.requestId).toLowerCase() === wanted &&
+        (ev.args.amount as bigint) >= minAmountBaseUnits
+      ) {
+        return true;
+      }
+    } catch {
+      /* another event */
+    }
+  }
+  return false;
+}
+
+/** The task was already paid on chain; the caller recovers the real hash. */
+class AlreadyAcceptedOnChain extends Error {}
+
+/** Thrown when the public testnet stayed too slow across every retry. */
+export class SlowTestnetError extends Error {
+  constructor() {
+    super(
+      "The QDay testnet is slow right now, so the payment has not finished. Nothing was paid twice and the fee is still held. Press Approve again in a minute to finish it."
+    );
+    this.name = "SlowTestnetError";
+  }
+}
+
+async function settleOnce(input: SettlementTaskInput): Promise<SettlementResult> {
   const { operatorKey, editorKey, escrow } = requireConfigured();
   const editorAccount = privateKeyToAccount(editorKey);
   const editor = editorAccount.address;
@@ -339,7 +537,7 @@ export async function settleTaskOnChain(
   });
   const existingStatus = existingTask[4] as number; // 0 None,1 Offered,2 Submitted,3 Accepted
   if (existingStatus >= 3) {
-    throw new Error(
+    throw new AlreadyAcceptedOnChain(
       "This task already settled on-chain. ReviewEscrow pays each taskId at most once."
     );
   }
