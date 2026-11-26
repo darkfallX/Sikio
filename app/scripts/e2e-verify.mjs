@@ -78,30 +78,6 @@ async function run() {
   assert(body200.words?.length === 43, `Expected 43 timed words, got ${body200.words?.length}`);
   console.log("Real HTTP 402 -> X-PAYMENT -> HTTP 200 x402 handshake verified");
 
-  // 3. Byte-level WAV Excerpt Confidentiality Slicer + NaN Validation
-  const fullWav = await fetch(`${BASE}/clips/lagos-fintech-ep14.wav`);
-  const fullBuf = Buffer.from(await fullWav.arrayBuffer());
-  const excerptRes = await fetch(
-    `${BASE}/api/excerpt/lagos-fintech-ep14?start=5.0&end=8.5`
-  );
-  assert(excerptRes.status === 200, `Excerpt returned ${excerptRes.status}`);
-  assert(
-    excerptRes.headers.get("x-sikio-excerpt-only") === "true",
-    "Missing X-Sikio-Excerpt-Only header"
-  );
-  const excerptBuf = Buffer.from(await excerptRes.arrayBuffer());
-  assert(excerptBuf.toString("ascii", 0, 4) === "RIFF", "Excerpt is not valid RIFF/WAV");
-  assert(
-    excerptBuf.length < fullBuf.length * 0.35,
-    `Excerpt size (${excerptBuf.length}) should be far smaller than full WAV (${fullBuf.length})`
-  );
-
-  const nanRes = await fetch(`${BASE}/api/excerpt/lagos-fintech-ep14?start=NaN&end=8`);
-  assert(nanRes.status === 400, `Expected HTTP 400 for NaN start, got ${nanRes.status}`);
-  console.log(
-    `Byte-level WAV excerpt (${excerptBuf.length}B vs ${fullBuf.length}B) and NaN rejection verified`
-  );
-
   // 4. Full End-to-End Job -> Guard -> Editor -> Approver -> Double-Pay Block -> Refund -> Reconciled Ledger -> Export
   await fetch(`${BASE}/api/state`, {
     method: "POST",
@@ -120,11 +96,39 @@ async function run() {
   });
   assert(jobRes.status === 200, `Job creation failed: ${jobRes.status}`);
   const jobJson = await jobRes.json();
-  assert(jobJson.createdTasks.length >= 4, "Expected at least 4 flagged African speech spans");
+  // Works with either engine: the prepared transcript (4+ spans) or Deepgram (3+).
+  assert(jobJson.createdTasks.length >= 3, "Expected at least 3 flagged African speech spans");
+  // The prepared transcript mishears Paystack as "Pay stark"; Deepgram as "PACE TAC".
   const paystackTask = jobJson.createdTasks.find((t) =>
-    t.aiGuess.toLowerCase().includes("pay stark")
+    /pay stark|pace/i.test(t.aiGuess)
   );
-  assert(paystackTask, "Expected 'Pay stark' flagged task");
+  assert(paystackTask, "Expected a flagged task for the misheard word Paystack");
+
+  // 3. Excerpt confidentiality: only a review task's own window is served, sliced
+  // to the uncertain seconds; other windows and 12 s walks are refused.
+  const fullWav = await fetch(`${BASE}/clips/lagos-fintech-ep14.wav`);
+  const fullBuf = Buffer.from(await fullWav.arrayBuffer());
+  const excerptRes = await fetch(
+    `${BASE}/api/excerpt/lagos-fintech-ep14?start=${paystackTask.start}&end=${paystackTask.end}`
+  );
+  assert(excerptRes.status === 200, `Excerpt returned ${excerptRes.status}`);
+  assert(
+    excerptRes.headers.get("x-sikio-excerpt-only") === "true",
+    "Missing X-Sikio-Excerpt-Only header"
+  );
+  const excerptBuf = Buffer.from(await excerptRes.arrayBuffer());
+  assert(excerptBuf.toString("ascii", 0, 4) === "RIFF", "Excerpt is not valid RIFF/WAV");
+  assert(
+    excerptBuf.length < fullBuf.length * 0.35,
+    `Excerpt size (${excerptBuf.length}) should be far smaller than full WAV (${fullBuf.length})`
+  );
+  const walkRes = await fetch(`${BASE}/api/excerpt/lagos-fintech-ep14?start=0&end=12`);
+  assert(walkRes.status === 403, `Expected HTTP 403 for a window no task covers, got ${walkRes.status}`);
+  const nanRes = await fetch(`${BASE}/api/excerpt/lagos-fintech-ep14?start=NaN&end=8`);
+  assert(nanRes.status === 400, `Expected HTTP 400 for NaN start, got ${nanRes.status}`);
+  console.log(
+    `Task-bound WAV excerpt (${excerptBuf.length}B vs ${fullBuf.length}B), off-task 403 and NaN 400 verified`
+  );
 
   // Unsubmitted offered task CANNOT be accepted directly
   const premAcceptRes = await fetch(`${BASE}/api/tasks`, {
@@ -198,14 +202,17 @@ async function run() {
     `Settled mismatch: ${settledSum} vs ${curState.batch.spentTusd8}`
   );
 
-  // Verify SRT & VTT exports contain merged "Paystack" and not "Pay stark"
+  // Verify SRT & VTT exports contain the merged fix "Paystack", not the misheard text
   const srt = await (
     await fetch(`${BASE}/api/jobs/${jobJson.job.id}/export?format=srt`)
   ).text();
   const vtt = await (
     await fetch(`${BASE}/api/jobs/${jobJson.job.id}/export?format=vtt`)
   ).text();
-  assert(srt.includes("Paystack") && !srt.includes("Pay stark"), "SRT missing merged fix");
+  assert(
+    srt.includes("Paystack") && !srt.includes(paystackTask.aiGuess),
+    "SRT missing merged fix"
+  );
   assert(vtt.startsWith("WEBVTT") && vtt.includes("Paystack"), "VTT missing merged fix");
   console.log("End-to-end payment, exact-once guard, refund, reconciliation, and export verified");
 
