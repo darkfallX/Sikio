@@ -40,6 +40,8 @@ export function buildX402Challenge(params: {
   requestId: string;
   amountTusd8: number;
   resource: string;
+  /** Sikio's own server address when live keys are set, so the fee is not burned. */
+  payTo?: `0x${string}`;
 }): X402PaymentChallenge {
   const baseUnits = Math.round(params.amountTusd8 * 1_000_000).toString();
   return {
@@ -51,7 +53,7 @@ export function buildX402Challenge(params: {
     decimals: 6,
     maxAmountRequired: baseUnits,
     amountDisplay: `${params.amountTusd8.toFixed(2)} tUSD8`,
-    payTo: SIKIO_TRANSCRIPTION_PROVIDER,
+    payTo: params.payTo ?? SIKIO_TRANSCRIPTION_PROVIDER,
     requestId: params.requestId,
     resource: params.resource,
     operator: "Sikio Transcription Service (self-hosted endpoint)",
