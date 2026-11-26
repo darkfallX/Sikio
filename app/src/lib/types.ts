@@ -28,7 +28,8 @@ export interface CaptionWord {
   //  - "whisper-logprob": real OpenAI Whisper segment average log-probability
   //  - "prepared-demo": authored fixture confidence for a bundled showcase clip
   //  - "lexical-heuristic": transparent out-of-vocabulary / proper-noun rule (no neural model)
-  confidenceSource?: "whisper-logprob" | "prepared-demo" | "lexical-heuristic";
+  //  - "deepgram-confidence": real per-word confidence from Deepgram speech recognition
+  confidenceSource?: "whisper-logprob" | "prepared-demo" | "lexical-heuristic" | "deepgram-confidence";
   flagReason?: string; // why a lexical-heuristic word was flagged, e.g. "proper noun", "out-of-vocabulary"
   taskId?: string;
   fixedByHuman?: boolean;
