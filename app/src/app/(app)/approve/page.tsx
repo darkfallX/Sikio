@@ -178,6 +178,7 @@ export default function ApprovePage() {
         error?: string;
         mode?: "aevum-live" | "sandbox";
         settlement?: { explorerTxUrl?: string };
+        note?: string;
       };
 
       if (action === "accept" && !(liveEscrowMode && address && isAevum)) {
@@ -237,7 +238,7 @@ export default function ApprovePage() {
         txUrl: json.settlement?.explorerTxUrl,
         text:
           action === "accept"
-            ? `Paid ${task.editorName} ${fee} tUSD8 once${live ? " on Aevum" : ""}. "${task.submittedText || task.aiGuess}" is now in the captions.`
+            ? `Paid ${task.editorName} ${fee} tUSD8 once${live ? " on Aevum" : ""}. "${task.submittedText || task.aiGuess}" is now in the captions.${!live && json.note ? ` ${json.note}` : ""}`
             : action === "reject"
               ? `Rejected "${task.submittedText || task.aiGuess}". ${fee} tUSD8 is back in the batch.`
               : `Returned ${fee} tUSD8 to the batch.`,
