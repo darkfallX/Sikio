@@ -1,4 +1,5 @@
 import { AEVUM_CONFIG } from "./aevum";
+import type { ExactEvmPayload } from "./eip3009";
 
 /**
  * HTTP 402 Payment Required (x402) protocol payload for Sikio's own AI Transcription Service.
@@ -26,7 +27,11 @@ export interface X402PaymentHeader {
   x402Version: 1;
   network: "eip155:44005";
   requestId: string;
-  txHash: `0x${string}`;
+  /** Standard x402 "exact" scheme: a signed EIP-3009 tUSD8 transfer the server settles. */
+  scheme?: "exact";
+  payload?: ExactEvmPayload;
+  /** Older proof: a ReviewEscrow.payInference tx the payer already sent (browser wallet). */
+  txHash?: `0x${string}`;
   payer: `0x${string}`;
   amountBaseUnits: string;
   mode: "aevum-live" | "sandbox";
@@ -72,12 +77,20 @@ export function decodeX402Header(raw: string | null): X402PaymentHeader | null {
   try {
     const decoded = Buffer.from(raw, "base64").toString("utf8");
     const parsed = JSON.parse(decoded) as X402PaymentHeader;
+    const hasTx = typeof parsed.txHash === "string" && /^0x[0-9a-fA-F]{64}$/.test(parsed.txHash);
+    const a = parsed.payload?.authorization;
+    const hasAuth =
+      parsed.scheme === "exact" &&
+      typeof parsed.payload?.signature === "string" &&
+      parsed.payload.signature.startsWith("0x") &&
+      !!a &&
+      [a.from, a.to, a.nonce].every((v) => typeof v === "string" && v.startsWith("0x")) &&
+      [a.value, a.validAfter, a.validBefore].every((v) => typeof v === "string" && /^\d+$/.test(v));
     if (
       parsed.x402Version !== 1 ||
       parsed.network !== "eip155:44005" ||
       !parsed.requestId ||
-      !parsed.txHash ||
-      !parsed.txHash.startsWith("0x")
+      (!hasTx && !hasAuth)
     ) {
       return null;
     }
