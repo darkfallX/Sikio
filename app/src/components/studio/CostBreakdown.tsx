@@ -144,6 +144,11 @@ export function CostBreakdown({
             )}
           </div>
         )}
+        {live && x402Receipt?.note.includes("EIP-3009") && (
+          <div className="text-[12px] text-[var(--mute)]">
+            Agent {shortHash(x402Receipt.from)} signed it, no gas. tUSD8 EIP-3009, settled once.
+          </div>
+        )}
       </div>
 
       <Link
