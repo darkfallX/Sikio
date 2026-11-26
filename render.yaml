@@ -14,7 +14,10 @@
 #
 # Note: the free plan sleeps after ~15 min idle (first request then takes ~50s to wake),
 # and its disk resets on restart/redeploy (session state starts fresh, which is fine for
-# a demo). Ping the URL a minute before judging, or use a paid instance for the window.
+# a demo). The live escrow batch is found again on chain after a wipe, so a wake does not
+# lock a new deposit. Ping the URL a minute before judging, or use a paid instance.
+# Live spending is capped per visitor and per day (LIVE_VISITOR_HOURLY_TUSD8, default
+# 1.00, and LIVE_DAILY_CAP_TUSD8, default 1.50); set them here to change the limits.
 services:
   - type: web
     name: sikio
