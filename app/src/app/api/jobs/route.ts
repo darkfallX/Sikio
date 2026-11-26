@@ -6,21 +6,20 @@ import {
   readState,
 } from "@/lib/store";
 import { findUploadedClip } from "@/lib/storage";
+import { liveLimitNote, takeLiveSpend, visitorKey } from "@/lib/live-limit";
 import { encodeX402Header, X402PaymentChallenge } from "@/lib/x402";
 import { CaptionWord, ExecutionMode } from "@/lib/types";
 import { POST as transcribePost } from "../transcribe/route";
-import {
-  isLiveSettlementConfigured,
-  payInferenceOnChain,
-  SlowTestnetError,
-} from "@/lib/settlement";
+import { isLiveSettlementConfigured } from "@/lib/settlement";
+import { ExactEvmPayload, signX402Payment } from "@/lib/eip3009";
 
 export const runtime = "nodejs";
 
 /**
  * Runs the Sikio Agent end-to-end for a clip:
  * 1. Calls /api/transcribe with no payment header -> receives HTTP 402 Payment Required challenge (x402)
- * 2. Settles 0.04 tUSD8 inside the approved batch budget (or uses live wallet txHash)
+ * 2. Signs a standard x402 "exact" payment (EIP-3009 tUSD8 transfer) that the service's
+ *    facilitator settles on chain (or uses a live wallet txHash, or sandbox)
  * 3. Re-calls /api/transcribe with X-PAYMENT proof -> receives 200 OK timed word probabilities
  * 4. Flags uncertain words below confidenceThreshold & reserves fees per task
  */
@@ -88,61 +87,90 @@ export async function POST(req: NextRequest) {
     };
     const challenge = step1Json.challenge;
 
-    // Step 2: Pay for the transcript. With no browser wallet, the agent pays on
-    // chain itself (ReviewEscrow.payInference from its live batch), so a judge
-    // with no wallet still sees a real x402 payment. If the testnet is too slow,
-    // fall back to a sandbox receipt that is labelled sandbox.
-    let serverPaidTx: `0x${string}` | undefined;
-    if (!body.x402TxHash && isLiveSettlementConfigured()) {
+    // Step 2: Pay for the transcript. With no browser wallet, the agent signs a
+    // standard x402 "exact" payment: an EIP-3009 tUSD8 transfer for exactly the price,
+    // valid for 5 minutes, single use. It sends no transaction and holds no gas; the
+    // service's facilitator settles it on chain. If anything fails, the transcript is
+    // paid in sandbox and labelled sandbox.
+    let signed: ExactEvmPayload | undefined;
+    const runLimit =
+      !body.x402TxHash && isLiveSettlementConfigured()
+        ? takeLiveSpend(visitorKey(req), inferenceCostTusd8, `run:${challenge.requestId}`)
+        : null;
+    if (runLimit && !runLimit.ok) {
+      livePaymentNote = liveLimitNote(runLimit.reason, "this transcript");
+    } else if (!body.x402TxHash && isLiveSettlementConfigured()) {
       try {
-        const paid = await payInferenceOnChain(challenge.requestId, inferenceCostTusd8);
-        serverPaidTx = paid.txHash;
-        effectiveMode = "aevum-live";
+        signed = await signX402Payment({
+          requestId: challenge.requestId,
+          payTo: challenge.payTo,
+          amountBaseUnits: BigInt(challenge.maxAmountRequired),
+        });
       } catch (err) {
-        livePaymentNote =
-          err instanceof SlowTestnetError
-            ? "The QDay testnet was slow, so this transcript was paid in sandbox."
-            : "On-chain payment failed, so this transcript was paid in sandbox.";
-        console.error("[jobs] live payInference failed:", err instanceof Error ? err.message : err);
+        livePaymentNote = "The QDay testnet was slow, so this transcript was paid in sandbox.";
+        console.error("[jobs] x402 signing failed:", err instanceof Error ? err.message.split("\n")[0] : err);
       }
     }
 
-    // Construct the X-PAYMENT proof
-    const x402TxHash: `0x${string}` =
-      body.x402TxHash ||
-      serverPaidTx ||
-      (`0x${Buffer.from(`${requestId}:${Date.now()}`)
-        .toString("hex")
-        .padEnd(64, "a")
-        .slice(0, 64)}` as `0x${string}`);
-
-    const paymentHeader = encodeX402Header({
-      x402Version: 1,
-      network: "eip155:44005",
-      requestId: challenge.requestId,
-      txHash: x402TxHash,
-      payer: state.batch.agentAddress,
-      amountBaseUnits: challenge.maxAmountRequired,
-      mode: effectiveMode,
-    });
+    const sandboxTx = `0x${Buffer.from(`${requestId}:${Date.now()}`)
+      .toString("hex")
+      .padEnd(64, "a")
+      .slice(0, 64)}` as `0x${string}`;
+    const headerFor = (useSigned: boolean) =>
+      useSigned && signed
+        ? encodeX402Header({
+            x402Version: 1,
+            network: "eip155:44005",
+            requestId: challenge.requestId,
+            scheme: "exact",
+            payload: signed,
+            payer: signed.authorization.from,
+            amountBaseUnits: challenge.maxAmountRequired,
+            mode: "aevum-live",
+          })
+        : encodeX402Header({
+            x402Version: 1,
+            network: "eip155:44005",
+            requestId: challenge.requestId,
+            txHash: body.x402TxHash || sandboxTx,
+            payer: state.batch.agentAddress,
+            amountBaseUnits: challenge.maxAmountRequired,
+            mode: body.x402TxHash ? effectiveMode : "sandbox",
+          });
 
     // Step 3: Paid retry to /api/transcribe -> HTTP 200 OK timed transcript
-    const step2Req = new NextRequest("http://sikio.local/api/transcribe", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-PAYMENT": paymentHeader,
-      },
-      body: JSON.stringify(transcribePayload),
-    });
-    const step2Res = await transcribePost(step2Req);
-    const step2Json = (await step2Res.json()) as {
+    type TranscribeReply = {
       ok?: boolean;
       error?: string;
       engine?: string;
       durationSeconds?: number;
       words?: CaptionWord[];
+      x402?: { txHash?: `0x${string}`; verifiedOnChain?: boolean; scheme?: string; payer?: `0x${string}` };
     };
+    const paidCall = async (header: string) => {
+      const res = await transcribePost(
+        new NextRequest("http://sikio.local/api/transcribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-PAYMENT": header },
+          body: JSON.stringify(transcribePayload),
+        })
+      );
+      return { res, json: (await res.json()) as TranscribeReply };
+    };
+    let paymentHeader = headerFor(true);
+    let { res: step2Res, json: step2Json } = await paidCall(paymentHeader);
+    if (signed && step2Res.status === 402) {
+      // The facilitator could not settle the signed payment: nothing moved on chain
+      // for it, so finish this run in sandbox and say so.
+      livePaymentNote = "The signed payment could not be settled on the QDay testnet, so this transcript was paid in sandbox.";
+      console.error("[jobs] x402 settle refused:", step2Json.error);
+      signed = undefined;
+      paymentHeader = headerFor(false);
+      ({ res: step2Res, json: step2Json } = await paidCall(paymentHeader));
+    }
+    const serverPaidTx =
+      signed && step2Json.x402?.verifiedOnChain ? step2Json.x402.txHash : undefined;
+    if (serverPaidTx) effectiveMode = "aevum-live";
     if (!step2Res.ok || !step2Json.words) {
       return NextResponse.json(
         { error: step2Json.error || "Paid x402 retry failed." },
@@ -189,6 +217,9 @@ export async function POST(req: NextRequest) {
         step2Json.engine || "Sikio Local ASR Engine (self-hosted x402)",
       x402RequestId: challenge.requestId,
       x402TxHash: body.x402TxHash || serverPaidTx,
+      x402Signed: serverPaidTx
+        ? { payer: step2Json.x402?.payer, provider: challenge.payTo }
+        : undefined,
       words: step2Json.words,
       preferredCity,
       isCustomUpload,
