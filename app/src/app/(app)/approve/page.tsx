@@ -183,14 +183,9 @@ export default function ApprovePage() {
       if (action === "accept" && !(liveEscrowMode && address && isAevum)) {
         // No connected wallet: the server settles on-chain with the operator key.
         // The approver pays once from the browser with no wallet, key, or extension.
-        // Walk the approver through the three real on-chain steps during the ~20s wait.
+        // Show the three on-chain steps and an elapsed counter while the server works.
         if (serverLive) {
           setSettling({ step: 0 });
-          let s = 0;
-          stepTimer = setInterval(() => {
-            s = Math.min(2, s + 1);
-            setSettling({ step: s });
-          }, 6500);
         }
         const res = await fetch("/api/settle", {
           method: "POST",
@@ -364,15 +359,18 @@ export default function ApprovePage() {
               <div className="flex items-center gap-2 font-mono text-[13.5px] font-bold">
                 <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
                 Settling on QDay Aevum
+                <ElapsedSeconds />
               </div>
               <ol className="grid gap-2">
                 {[
                   "Reserve the fee in escrow",
                   "Record the editor's fix",
                   "Pay the editor once",
-                ].map((label, i) => {
-                  const done = i < settling.step;
-                  const active = i === settling.step;
+                ].map((label) => {
+                  // The server reports the hashes when all three are mined, so no step is
+                  // shown as done before the chain confirms it.
+                  const done = false;
+                  const active = false;
                   return (
                     <li
                       key={label}
@@ -392,7 +390,8 @@ export default function ApprovePage() {
                 })}
               </ol>
               <p className="text-[12px] text-[var(--mute)]">
-                Real transactions on chain 44005. Usually about 20 seconds.
+                Three real transactions on chain 44005, one after another. Usually under a
+                minute; the public testnet is sometimes slower.
               </p>
             </motion.div>
           )}
@@ -562,6 +561,21 @@ export default function ApprovePage() {
         </LayoutGroup>
       )}
     </div>
+  );
+}
+
+/** Seconds since the settlement started, so a slow testnet reads as progress, not a hang. */
+function ElapsedSeconds() {
+  const [secs, setSecs] = useState(0);
+  useEffect(() => {
+    const started = Date.now();
+    const id = setInterval(() => setSecs(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <span className="ml-auto font-mono text-[12.5px] font-bold tabular-nums text-[var(--mute)]">
+      {secs}s
+    </span>
   );
 }
 
