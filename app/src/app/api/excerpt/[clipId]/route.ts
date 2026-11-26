@@ -3,6 +3,16 @@ import path from "path";
 import { NextRequest, NextResponse } from "next/server";
 import { getClipSpec } from "@/lib/clips";
 import { findUploadedClip } from "@/lib/storage";
+import { readState } from "@/lib/store";
+
+/** The 12 s cap alone would let anyone walk a recording in 12 s steps. Only serve a
+ *  window that lies inside a review task created for this clip. */
+function windowBelongsToTask(clipId: string, start: number, end: number): boolean {
+  const slack = 0.05;
+  return readState().tasks.some(
+    (t) => t.clipId === clipId && start >= t.start - slack && end <= t.end + slack
+  );
+}
 
 export const runtime = "nodejs";
 
@@ -103,6 +113,13 @@ export async function GET(
     // Hard confidentiality guard: max 12s excerpt
     const endSec = Math.min(parsedEnd, startSec + 12);
 
+    if (!windowBelongsToTask(clipId, startSec, endSec)) {
+      return NextResponse.json(
+        { error: "No review task covers that window." },
+        { status: 403 }
+      );
+    }
+
     const spec = getClipSpec(clipId);
     if (spec) {
       const wavPath = path.join(process.cwd(), "public", "clips", `${clipId}.wav`);
@@ -130,34 +147,27 @@ export async function GET(
     }
 
     const buf = fs.readFileSync(uploaded.filePath);
-    if (uploaded.meta.isWav) {
-      const excerptWav = sliceWavBuffer(buf, startSec, endSec);
-      if (excerptWav) {
-        return new NextResponse(new Uint8Array(excerptWav), {
-          status: 200,
-          headers: {
-            "Content-Type": "audio/wav",
-            "Content-Length": String(excerptWav.length),
-            "Cache-Control": "no-store",
-            "X-Sikio-Excerpt-Only": "true",
-            "X-Sikio-Window": `${startSec.toFixed(2)}s-${endSec.toFixed(2)}s`,
-            "X-Sikio-Full-Duration-Withheld": "true",
-          },
-        });
-      }
+    // Uploads are stored as PCM WAV (converted on upload). Anything else cannot be
+    // sliced safely, so it is refused rather than sent whole.
+    const excerptWav = sliceWavBuffer(buf, startSec, endSec);
+    if (excerptWav) {
+      return new NextResponse(new Uint8Array(excerptWav), {
+        status: 200,
+        headers: {
+          "Content-Type": "audio/wav",
+          "Content-Length": String(excerptWav.length),
+          "Cache-Control": "no-store",
+          "X-Sikio-Excerpt-Only": "true",
+          "X-Sikio-Window": `${startSec.toFixed(2)}s-${endSec.toFixed(2)}s`,
+          "X-Sikio-Full-Duration-Withheld": "true",
+        },
+      });
     }
 
-    // Compressed non-WAV custom uploads rely on player window clamping
-    return new NextResponse(new Uint8Array(buf), {
-      status: 200,
-      headers: {
-        "Content-Type": uploaded.meta.mimeType || "application/octet-stream",
-        "Content-Length": String(buf.length),
-        "Cache-Control": "no-store",
-        "X-Sikio-Excerpt-Only": "client-window",
-        "X-Sikio-Window": `${startSec.toFixed(2)}s-${endSec.toFixed(2)}s`,
-      },
-    });
+    return NextResponse.json(
+      { error: "This recording cannot be sliced, so it is not served." },
+      { status: 415 }
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Excerpt slice failed";
     return NextResponse.json({ error: message }, { status: 500 });
