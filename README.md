@@ -134,15 +134,15 @@ Reproducible via `cd contracts && REVIEW_ESCROW_ADDRESS=0x36Cf1caB839bf01306E647
 
 ## Judge Demo Script (3 to 5 minutes)
 
-Open the app without a wallet and every step runs in sandbox, clearly labelled as sandbox. To sign real transactions, connect a wallet on chain 44005 and switch the top bar from **Sandbox** to **Live tx**.
+No wallet needed. When the server has its operator and editor keys set (see `app/.env.example`), every payment in this script is a real transaction on chain 44005 with an explorer link: the agent pays 0.04 tUSD8 for the transcript (`payInference`), and Approve sends `offerTask`, `submitCorrectionBySig` and `acceptTask`, which pays the editor once (about 30 seconds; the public testnet is sometimes slower). Without those keys the same steps run in a sandbox and every receipt says so. To sign with your own wallet instead, connect it on chain 44005 and switch the top bar from **Sandbox** to **Live tx**.
 
 1. **Landing (`/`):** Click **Open the demo**.
 2. **Studio (`/studio`):** Keep the **Lagos · Pidgin** clip and click **Run agent**.
    - The x402 receipt shows **402 then 200**: the agent paid `0.04 tUSD8` for the transcript.
-   - Five unsure words land in **Needs an ear** (*"Tuesday from Yabba"*, *"Pay stark"*, *"Nara"*, *"wall holler"*, *"down for"*), and `0.50 tUSD8` is held for native speakers.
+   - With `DEEPGRAM_API_KEY` set, the transcript is real Deepgram nova-3 output and the flags are its own word confidences. On the Lagos clip four spans land in **Needs an ear** (*"Point Lagos."*, *"Tunde"*, *"PACE TAC"* for Paystack, *"third mainland"*), and `0.40 tUSD8` is held for native speakers. Without the key, the prepared transcript runs instead and is labelled so.
    - **Cost per minute** compares Sikio with a full human pass.
-3. **Ear (`/ear`):** The phone-first editor view. Step to *"Pay stark"* with the arrows and play the voice note.
-   - The editor hears only a short slice around the word, never more than 12 seconds. In DevTools, `/api/excerpt` returns that slice, never the full recording.
+3. **Ear (`/ear`):** The phone-first editor view. Step to *"PACE TAC"* (or *"Pay stark"* in the prepared transcript) with the arrows and play the voice note.
+   - The editor hears only a short slice around the word, never more than 12 seconds. In DevTools, `/api/excerpt` returns that slice, never the full recording, and answers **403** to any window that is not a review task's own (so the recording cannot be walked in 12-second steps). Uploaded phone audio (.m4a, .ogg, .mp3, video) is converted to WAV with ffmpeg on upload, so uploads are sliced the same way.
    - Type `Paystack` and press **Send answer, pays $0.10**. No gas and no crypto words.
 4. **Approve (`/approve`):** Press **Hear 1.9 seconds** to check the slice, then **Approve and pay 0.10**.
    - The word moves to **Settled** as **Paid once**.
@@ -154,11 +154,13 @@ Open the app without a wallet and every step runs in sandbox, clearly labelled a
 ## Limitations Stated Plainly
 
 - **Testnet only (`tUSD8`):** Mainnet agency deployment requires a regulated stablecoin with local off-ramps (e.g., NGN/KES/GHS cash-out).
-- **Interactive Sandbox + Live Testnet:** `ReviewEscrow.sol` is deployed and verified end-to-end on QDay Aevum Testnet (`0x36Cf1caB839bf01306E647C56B2e44e7d4a35E6b`). For visitors who open the web app without a funded Aevum wallet, interactive flows run in clearly badged **Sandbox Mode** executing identical escrow policy rules.
+- **Interactive Sandbox + Live Testnet:** `ReviewEscrow.sol` is deployed and verified end-to-end on QDay Aevum Testnet (`0x36Cf1caB839bf01306E647C56B2e44e7d4a35E6b`). Visitors without a wallet still trigger real transactions: Sikio's server pays from a small, capped live batch (2.00 tUSD8 at most per batch, 0.50 per task) and labels each receipt `live 44005` with an explorer link. If the server keys are missing or the testnet stays too slow, the flow falls back to **Sandbox Mode** with identical rules, and the receipt says sandbox.
+- **No sign-in yet:** editors only ever get task slices from `/api/excerpt`, but the demo has no accounts, so the agency's full recording is still reachable by anyone who knows its URL (`/clips/*.wav` for the demo clips, `/api/media/<clipId>` for uploads). Real separation needs agency sign-in or signed links.
+- **Slow public RPC:** `rpc-test.qday.info` answered in 2.5 to 19 seconds per call when measured on 25 Nov 2026. Settlement uses 45-second timeouts and retries, resumes from the step the chain already shows, and never pays a task twice.
 - **QDay SDK / Bundler status:** `@qday-io/sdk` and public Aevum Alto bundler URLs are scheduled for Q1 2027 (`qday-io/qday-wiki`). `ReviewEscrow.sol` enforces batch caps, expiry, allowlists, and EIP-712 gasless submissions directly on Aevum Testnet today.
 - **Overconfident AI errors:** Targeted review misses errors where ASR scores above the agency's confidence floor; this rate is measured and published in `/receipts` and [`docs/BENCHMARK.md`](docs/BENCHMARK.md).
 - **Self-hosted transcription endpoint:** `/api/transcribe` is operated by Sikio and explicitly labelled as ours.
-- **Demo clips use a prepared transcript:** For the three showcase clips, `/api/transcribe` returns fixed word timings and confidences from `app/public/clips/timings.json`. The misheard words are hand-written to reflect the error patterns reported in AfriSpeech-MultiBench. The app labels this **Sikio Local ASR Engine (prepared demo transcript)**. Uploaded audio goes to the OpenAI Whisper API only when `OPENAI_API_KEY` is set; otherwise the local engine handles it and says so.
+- **Real speech recognition, honestly measured:** With `DEEPGRAM_API_KEY` set, `/api/transcribe` sends the clip to Deepgram nova-3 and flags words by Deepgram's own confidence. It runs only for a payment verified on chain; sandbox payments get the prepared transcript (`app/public/clips/timings.json`), labelled **Sikio Local ASR Engine (prepared demo transcript)**. Measured on the three clips on 26 Nov 2026 (`node app/scripts/asr-proof.mjs`): Deepgram got 104 of 109 words right. At the 0.78 threshold it flagged 9 words, of which 3 were really wrong, and it missed 2 errors confidently (*"Wahela"* at 82%, *"Danfoe"* at 94%), so those stay wrong in the final captions. Counting the 0.65 seconds of context the app plays either side of each unsure word, a human heard 16.3 of 44.3 seconds (37%). Uploaded audio goes to the OpenAI Whisper API only when `OPENAI_API_KEY` is set; otherwise the local engine handles it and says so.
 - **Chain proves payment, not correctness:** The named approver attests to linguistic quality.
 
 ---
