@@ -39,6 +39,7 @@ const ESCROW_ABI = parseAbi([
   "function trustedEditors(uint256, address) view returns (bool)",
   "function createBatch(address agent, address approver, uint256 maxBudget, uint256 maxTaskFee, uint64 expiry, bool enforceEditorAllowlist, bytes32 labelHash, uint256 initialDeposit) returns (uint256)",
   "function setTrustedEditor(uint256 batchId, address editor, bool allowed)",
+  "function withdrawAvailable(uint256 batchId, address to) returns (uint256)",
   "function offerTask(uint256 batchId, bytes32 taskId, address editor, uint256 fee, uint64 taskExpiry, bytes32 excerptHash)",
   "function submitCorrectionBySig(bytes32 taskId, bytes32 correctionHash, uint256 deadline, bytes signature)",
   "function acceptTask(bytes32 taskId)",
@@ -53,6 +54,8 @@ const ERC20_ABI = parseAbi([
 const TUSD8_DECIMALS = 6;
 const BATCH_MAX_BUDGET = "2.00"; // tUSD8 reserved per live batch
 const BATCH_MAX_TASK_FEE = "0.50"; // tUSD8 ceiling per task
+const BATCH_MIN_DEPOSIT = "0.50"; // below this a new batch would run dry almost at once
+const BATCH_SCAN_BACK = 20; // how many recent escrow batches to look through after a restart
 
 function normalizeKey(raw: string | undefined): Hex | null {
   if (!raw) return null;
@@ -83,11 +86,11 @@ export function liveSettlementAddresses(): {
 
 // The public Aevum RPC answers in 2 to 19 seconds (measured 25 Nov 2026), so
 // viem's 10 second default times out often. Give each call more room and retry.
-function rpcTransport() {
+export function rpcTransport() {
   return http(AEVUM_CONFIG.rpcUrl, { timeout: 45_000, retryCount: 4, retryDelay: 1_000 });
 }
 
-const publicClient = createPublicClient({
+export const publicClient = createPublicClient({
   chain: aevumTestnet,
   transport: rpcTransport(),
 });
@@ -208,16 +211,19 @@ async function createLiveBatch(
   const maxBudget = parseUnits(BATCH_MAX_BUDGET, TUSD8_DECIMALS);
   const maxTaskFee = parseUnits(BATCH_MAX_TASK_FEE, TUSD8_DECIMALS);
 
-  // Ensure the operator actually holds enough tUSD8 to fund the batch.
+  // Deposit what the operator holds, up to the batch cap, so the last tUSD8 in the
+  // wallet still pays for live runs instead of being stranded below the cap.
   const balance = (await publicClient.readContract({
     address: AEVUM_CONFIG.tusd8Address,
     abi: ERC20_ABI,
     functionName: "balanceOf",
     args: [operator],
   })) as bigint;
-  if (balance < maxBudget) {
+  const deposit = balance < maxBudget ? balance : maxBudget;
+  const minDeposit = parseUnits(BATCH_MIN_DEPOSIT, TUSD8_DECIMALS);
+  if (deposit < minDeposit) {
     throw new Error(
-      `Operator wallet ${operator} holds ${formatUnits(balance, TUSD8_DECIMALS)} tUSD8, needs ${BATCH_MAX_BUDGET}. Fund it at ${AEVUM_CONFIG.faucetUrl} or lower BATCH_MAX_BUDGET.`
+      `Operator wallet ${operator} holds ${formatUnits(balance, TUSD8_DECIMALS)} tUSD8, needs at least ${BATCH_MIN_DEPOSIT}. Fund it at ${AEVUM_CONFIG.faucetUrl}.`
     );
   }
 
@@ -228,12 +234,12 @@ async function createLiveBatch(
     functionName: "allowance",
     args: [operator, escrow],
   })) as bigint;
-  if (allowance < maxBudget) {
+  if (allowance < deposit) {
     const approveHash = await wallet.writeContract({
       address: AEVUM_CONFIG.tusd8Address,
       abi: ERC20_ABI,
       functionName: "approve",
-      args: [escrow, maxBudget],
+      args: [escrow, deposit],
     });
     await publicClient.waitForTransactionReceipt({ hash: approveHash });
   }
@@ -260,7 +266,7 @@ async function createLiveBatch(
       expiry,
       true,
       labelHash,
-      maxBudget,
+      deposit,
     ],
   });
   const createReceipt = await publicClient.waitForTransactionReceipt({
@@ -314,10 +320,103 @@ async function ensureLiveBatch(
     if (await batchIsUsable(escrow, again, operator, editor, feeUnits)) {
       return again as LiveBatchRecord;
     }
+    // The local record is gone or spent. A hosted server whose disk was wiped on a
+    // restart must not lock a fresh deposit each time it wakes, so look on chain for
+    // this operator's own batch first. Read errors throw here (never "not found"):
+    // a slow RPC must not lead to opening a batch blindly.
+    const scan = await scanOperatorBatches(escrow, operator, editor, feeUnits);
+    if (scan.usable) {
+      writeJsonAtomic(liveBatchFile(), scan.usable);
+      return scan.usable;
+    }
+    await reclaimLeftovers(escrow, operatorKey, operator, scan.leftovers);
     return await createLiveBatch(escrow, operatorKey, editor);
   } finally {
     release();
     batchSetupLock = null;
+  }
+}
+
+/**
+ * Looks through the most recent escrow batches, newest first. Returns the newest one
+ * this operator owns that can still pay `feeUnits` to the trusted editor, and the ids
+ * of this operator's batches that hold unspent tUSD8 but can no longer be used.
+ */
+async function scanOperatorBatches(
+  escrow: Address,
+  operator: Address,
+  editor: Address,
+  feeUnits: bigint
+): Promise<{ usable: LiveBatchRecord | null; leftovers: number[] }> {
+  const next = Number(
+    (await publicClient.readContract({
+      address: escrow,
+      abi: ESCROW_ABI,
+      functionName: "nextBatchId",
+    })) as bigint
+  );
+  const nowSec = BigInt(Math.floor(Date.now() / 1000));
+  const leftovers: number[] = [];
+  for (let id = next - 1; id >= Math.max(1, next - BATCH_SCAN_BACK); id--) {
+    const batch = await publicClient.readContract({
+      address: escrow,
+      abi: ESCROW_ABI,
+      functionName: "batches",
+      args: [BigInt(id)],
+    });
+    const agency = (batch[0] as Address).toLowerCase();
+    const agent = (batch[1] as Address).toLowerCase();
+    if (agency !== operator.toLowerCase() || agent !== operator.toLowerCase()) continue;
+    const avail = (await publicClient.readContract({
+      address: escrow,
+      abi: ESCROW_ABI,
+      functionName: "availableBudget",
+      args: [BigInt(id)],
+    })) as bigint;
+    if (avail === 0n) continue;
+    const expiry = batch[8] as bigint;
+    const trusted = (await publicClient.readContract({
+      address: escrow,
+      abi: ESCROW_ABI,
+      functionName: "trustedEditors",
+      args: [BigInt(id), editor],
+    })) as boolean;
+    if (trusted && expiry > nowSec + 3700n && avail >= feeUnits) {
+      return {
+        usable: { batchId: id, editorAddress: editor, createdAt: new Date().toISOString() },
+        leftovers,
+      };
+    }
+    leftovers.push(id);
+  }
+  return { usable: null, leftovers };
+}
+
+/** Returns unspent tUSD8 from this operator's dead or nearly empty batches to its wallet. */
+async function reclaimLeftovers(
+  escrow: Address,
+  operatorKey: Hex,
+  operator: Address,
+  ids: number[]
+): Promise<void> {
+  if (ids.length === 0) return;
+  const { wallet } = operatorWallet(operatorKey);
+  for (const id of ids) {
+    try {
+      const hash = await wallet.writeContract({
+        address: escrow,
+        abi: ESCROW_ABI,
+        functionName: "withdrawAvailable",
+        args: [BigInt(id), operator],
+      });
+      await publicClient.waitForTransactionReceipt({ hash });
+    } catch (err) {
+      // Not fatal: the new batch is funded from whatever the wallet holds.
+      console.error(
+        `[settlement] could not reclaim batch ${id}:`,
+        err instanceof Error ? err.message.split("\n")[0] : err
+      );
+    }
   }
 }
 
