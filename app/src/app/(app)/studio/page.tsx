@@ -250,12 +250,19 @@ export default function StudioPage() {
       });
 
       let challengeReqId = `x402-${Date.now().toString(36)}`;
+      let challengePayTo: `0x${string}` = SIKIO_TRANSCRIPTION_PROVIDER;
       if (probe402.status === 402) {
         const challengeData = (await probe402.json()) as {
-          challenge: { requestId: string; amountDisplay: string; operator: string };
+          challenge: {
+            requestId: string;
+            amountDisplay: string;
+            operator: string;
+            payTo?: `0x${string}`;
+          };
         };
         setLastX402(challengeData.challenge);
         challengeReqId = challengeData.challenge.requestId;
+        if (challengeData.challenge.payTo) challengePayTo = challengeData.challenge.payTo;
       }
 
       let x402TxHash: `0x${string}` | undefined;
@@ -265,7 +272,7 @@ export default function StudioPage() {
         x402TxHash = await payInferenceOnChain({
           batchId: data.batch.batchId,
           requestId: challengeReqId,
-          provider: SIKIO_TRANSCRIPTION_PROVIDER,
+          provider: challengePayTo,
           amountTusd8: 0.04,
         });
         runMode = "aevum-live";
@@ -283,6 +290,7 @@ export default function StudioPage() {
           confidenceThreshold: threshold,
           feePerTaskTusd8: feePerTask,
           x402TxHash,
+          x402RequestId: x402TxHash ? challengeReqId : undefined,
           mode: runMode,
         }),
       });
