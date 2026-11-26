@@ -7,6 +7,7 @@ import {
   settleTaskOnChain,
   SlowTestnetError,
 } from "@/lib/settlement";
+import { liveLimitNote, takeLiveSpend, visitorKey } from "@/lib/live-limit";
 import { shortHash } from "@/lib/aevum";
 
 export const runtime = "nodejs";
@@ -66,8 +67,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // No live keys configured -> honest sandbox settlement.
-    if (!isLiveSettlementConfigured()) {
+    // No live keys configured, or this visitor or the day is over the live spending
+    // limit -> honest sandbox settlement, labelled sandbox. A task that already counted
+    // (a retry after a slow testnet) always continues on chain.
+    const limit = isLiveSettlementConfigured()
+      ? takeLiveSpend(visitorKey(req), task.feeTusd8, `settle:${task.id}`)
+      : null;
+    if (!isLiveSettlementConfigured() || (limit && !limit.ok)) {
       const res = acceptReviewTask({
         taskId: task.id,
         approverAddress: state.batch.approverAddress,
@@ -75,6 +81,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         ok: true,
         mode: "sandbox",
+        note: limit && !limit.ok ? liveLimitNote(limit.reason, "this approval") : undefined,
         task: res.task,
         state: res.state,
         availableBudgetTusd8: getAvailableBudget(res.state.batch),
